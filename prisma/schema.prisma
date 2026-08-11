@@ -1,0 +1,149 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  password    String?
+  name        String?
+  companyName String?
+  brandColor  String?
+  logoUrl     String?
+  trade       String?   // Métier : plombier, électricien, maçon, etc.
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  projects Project[]
+}
+
+model Product {
+  id            String   @id @default(cuid())
+  userId        String
+  name          String
+  description   String?
+  category      String
+  purchasePrice Float
+  salePrice     Float
+  stock         Int      @default(0)
+  tvaRate       Float    @default(20.0)
+  imageUrl      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  items ProjectItem[]
+}
+
+model Service {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  unit        String
+  unitPriceHt Float
+  tvaRate     Float    @default(20.0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items ProjectItem[]
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id]) // 👈 AJOUT
+  name        String
+  status      String   @default("BROUILLON")
+  budgetEstimate Float?
+  description String?
+  paymentNotes String?
+  attachmentUrl String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Nouveaux champs pour le projet
+  type          String?
+  surface       Float?   // surface au sol (m²)
+  length        Float?   // longueur en mètres
+  width         Float?   // largeur en mètres
+  height        Float?   // hauteur sous plafond en mètres
+  floorWork     String?  // 'carrelage', 'peinture', 'aucun'
+  wallCount     Int?     // nombre de murs à traiter (0-4)
+  ceilingWork   String?  // 'carrelage', 'peinture', 'aucun'
+  splashback    Boolean? // crédence oui/non
+  splashHeight  Float?   // hauteur de la crédence en cm
+  renovationType String? // 'rafraichissement', 'complet'
+
+  // Relation inverse vers ProjectItem
+  items ProjectItem[]
+}
+
+model ProjectItem {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id])
+  serviceId   String?
+  service     Service? @relation(fields: [serviceId], references: [id])
+  quantity    Float
+  unitPriceHtAtSale Float
+  tvaRate     Float
+  createdAt   DateTime @default(now())
+}
+
+// ============================================
+// MODÈLES POUR L'ASSISTANT IA (BASE DE CONNAISSANCES)
+// ============================================
+
+model ProjectCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  label       String
+  description String?
+  icon        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items ProjectTemplateItem[]
+}
+
+model ProjectTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  trade       String
+  type        String
+  description String?
+  surfaceMin  Float?
+  surfaceMax  Float?
+  budgetMin   Float?
+  budgetMax   Float?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items ProjectTemplateItem[]
+}
+
+model ProjectTemplateItem {
+  id            String   @id @default(cuid())
+  templateId    String
+  template      ProjectTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  categoryId    String
+  category      ProjectCategory @relation(fields: [categoryId], references: [id])
+  
+  name          String
+  description   String?
+  quantity      Float
+  unit          String
+  estimatedPrice Float?
+  isRequired    Boolean  @default(true)
+  alternatives  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}

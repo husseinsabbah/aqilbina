@@ -274,6 +274,10 @@ export default function VendeurPage() {
     }
   };
 
+  const refreshCatalogSidebar = () => {
+    window.dispatchEvent(new CustomEvent("seller-catalogs:refresh"));
+  };
+
   const fetchAISuggestions = async () => {
     setAiLoading(true);
     try {
@@ -323,6 +327,7 @@ export default function VendeurPage() {
       ]);
       setLoading(false);
     };
+
     load();
   }, [session]);
 
@@ -359,6 +364,8 @@ export default function VendeurPage() {
       if (res.ok) {
         setShowModal(false);
         await fetchProducts();
+        await fetchCatalogs();
+        refreshCatalogSidebar();
         setEditingProduct(null);
         setFormData({
           name: "",
@@ -497,6 +504,7 @@ export default function VendeurPage() {
         setImportNewCatalogName("");
         await fetchProducts();
         await fetchCatalogs();
+        refreshCatalogSidebar();
         alert("Import réussi !");
       } else {
         const err = await res.json();

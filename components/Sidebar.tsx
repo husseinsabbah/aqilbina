@@ -4,8 +4,8 @@ import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
-  LayoutDashboard, Home, Users, CreditCard, LogOut,
-  ChevronDown, Package, Eye, Send, Store, FileText, Sparkles, Settings, PlusCircle
+  LayoutDashboard, CreditCard, LogOut,
+  ChevronDown, Package, Eye, Send, Store, Sparkles, Settings, PlusCircle
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 
@@ -58,9 +58,8 @@ export default function Sidebar({
   const [catalogsLoading, setCatalogsLoading] = useState(false);
   const [catalogMenuOpen, setCatalogMenuOpen] = useState(true);
 
-  // Charger les catalogues du vendeur
   const fetchCatalogs = async () => {
-    if (!session?.user?.id) return;
+    if (!session?.user?.id || session.user.role !== "vendeur") return;
     setCatalogsLoading(true);
     try {
       const res = await fetch("/api/seller/catalogs", { credentials: "include" });
@@ -68,8 +67,8 @@ export default function Sidebar({
         const data = await res.json();
         setCatalogs(data);
       }
-    } catch (error) {
-      console.error("Erreur chargement catalogues:", error);
+    } catch {
+      console.error("Erreur chargement catalogues");
     } finally {
       setCatalogsLoading(false);
     }
@@ -95,19 +94,28 @@ export default function Sidebar({
         } else {
           setCurrentAgent(null);
         }
-      } catch (error) {
+      } catch {
         setAgents([]);
         setCurrentAgent(null);
       } finally {
         setLoading(false);
       }
     };
-    fetchAgents();
-    
-    // Charger les catalogues si l'utilisateur est un vendeur
-    if (session?.user?.role === "vendeur") {
-      fetchCatalogs();
-    }
+
+    void fetchAgents();
+
+    const refreshCatalogs = () => {
+      window.setTimeout(() => {
+        void fetchCatalogs();
+      }, 0);
+    };
+
+    refreshCatalogs();
+
+    window.addEventListener("seller-catalogs:refresh", refreshCatalogs);
+    return () => {
+      window.removeEventListener("seller-catalogs:refresh", refreshCatalogs);
+    };
   }, [session]);
 
   const switchAgent = (agent: Agent) => {
@@ -191,22 +199,50 @@ export default function Sidebar({
           {dropdownOpen && (
             <div className="absolute left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
               {agents.map((agent) => (
-                <button
+                <div
                   key={agent.id}
-                  onClick={() => switchAgent(agent)}
-                  className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 ${
+                  className={`flex items-center justify-between gap-2 px-3 py-2 text-sm hover:bg-gray-50 ${
                     currentAgent?.id === agent.id ? "bg-blue-50 text-blue-700 font-medium" : ""
                   }`}
                 >
-                  <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                  {agent.name}
-                </button>
+                  <button
+                    onClick={() => switchAgent(agent)}
+                    className="flex-1 text-left flex items-center gap-2 min-w-0"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></span>
+                    <span className="truncate">{agent.name}</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      fetch('/api/user/agents/cancel', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ userAgentId: agent.id }),
+                      }).then(async (res) => {
+                        if (!res.ok) {
+                          const err = await res.json().catch(() => ({ error: 'Erreur' }));
+                          alert(err.error || 'Erreur lors de l’annulation');
+                          return;
+                        }
+                        setDropdownOpen(false);
+                        window.location.reload();
+                      }).catch(() => {
+                        alert('Erreur lors de l’annulation');
+                      });
+                    }}
+                    className="text-[10px] font-medium text-red-600 hover:text-red-700 px-2 py-1 rounded border border-red-200 bg-red-50"
+                  >
+                    Annuler
+                  </button>
+                </div>
               ))}
               <button
                 onClick={() => {
                   setCurrentAgent(null);
                   setDropdownOpen(false);
-                  router.push("/dashboard?view=overview");
+                  router.push("/parametres");
                 }}
                 className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 border-t border-gray-100 flex items-center gap-2"
               >

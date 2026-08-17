@@ -1,12 +1,12 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
-  Plus, Edit, Trash2, X, Upload, Package, ExternalLink,
-  AlertCircle, Loader2, Crown, Store, Building2, Sparkles,
-  CheckCircle, XCircle
+  Plus, Edit, Trash2, X, Package, ExternalLink,
+  Loader2, Crown, Store, Building2, Sparkles
 } from "lucide-react";
 
 type ServiceType = {
@@ -50,7 +50,8 @@ type Agent = {
 type UserAgent = {
   id: string;
   agentId: string;
-  agent: Agent;
+  agent?: Agent | null;
+  customName?: string | null;
   status: "PENDING" | "TRIAL" | "ACTIVE" | "CANCELLED" | "EXPIRED";
   startDate: string;
   endDate: string | null;
@@ -109,37 +110,6 @@ export default function ParametresPage() {
     }
   }, [session, sessionStatus, router]);
 
-  useEffect(() => {
-    if (!session?.user?.id) return;
-
-    fetch('/api/user/profile', { credentials: 'include' })
-      .then(res => res.json())
-      .then(data => {
-        setFormData({
-          companyName: data.companyName || "",
-          brandColor: data.brandColor || "#1E40AF",
-          logoUrl: data.logoUrl || "",
-          trade: data.trade || "",
-        });
-      })
-      .catch(err => console.error("Erreur chargement profil:", err));
-
-    fetchServices();
-    fetch('/api/user/service-types', { credentials: 'include' })
-      .then(res => res.json())
-      .then(data => setServiceTypes(data))
-      .catch(err => console.error("Erreur chargement types:", err));
-
-    fetchUserAgents();
-  }, [session]);
-
-  // Charger les catalogues quand l'utilisateur est un vendeur
-  useEffect(() => {
-    if (isVendeur) {
-      fetchCatalogs();
-    }
-  }, [isVendeur]);
-
   const fetchServices = async () => {
     try {
       const res = await fetch('/api/user/services', { credentials: 'include' });
@@ -168,16 +138,76 @@ export default function ParametresPage() {
   const fetchUserAgents = async () => {
     setUserAgentsLoading(true);
     try {
-      const res = await fetch('/api/user/agents', { credentials: 'include' });
+      const res = await fetch('/api/user/agents?detail=true', { credentials: 'include' });
       if (!res.ok) throw new Error('Erreur chargement agents');
       const data = await res.json();
-      setUserAgents(data);
+      setUserAgents(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Erreur chargement agents :", error);
+      setUserAgents([]);
     } finally {
       setUserAgentsLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!session?.user?.id) return;
+
+    const loadPageData = async () => {
+      try {
+        const profile = await fetch('/api/user/profile', { credentials: 'include' });
+        const profileData = await profile.json();
+        setFormData({
+          companyName: profileData.companyName || "",
+          brandColor: profileData.brandColor || "#1E40AF",
+          logoUrl: profileData.logoUrl || "",
+          trade: profileData.trade || "",
+        });
+      } catch (err) {
+        console.error("Erreur chargement profil:", err);
+      }
+
+      try {
+        const servicesRes = await fetch('/api/user/services', { credentials: 'include' });
+        const servicesData = await servicesRes.json();
+        setServices(servicesData);
+      } catch (err) {
+        console.error("Erreur chargement services :", err);
+      }
+
+      try {
+        const serviceTypesRes = await fetch('/api/user/service-types', { credentials: 'include' });
+        const serviceTypesData = await serviceTypesRes.json();
+        setServiceTypes(serviceTypesData);
+      } catch (err) {
+        console.error("Erreur chargement types:", err);
+      }
+
+      try {
+        const userAgentsRes = await fetch('/api/user/agents', { credentials: 'include' });
+        const userAgentsData = await userAgentsRes.json();
+        setUserAgents(userAgentsData);
+      } catch (err) {
+        console.error("Erreur chargement agents :", err);
+      }
+    };
+
+    void loadPageData();
+  }, [session]);
+
+  // Charger les catalogues quand l'utilisateur est un vendeur
+  useEffect(() => {
+    if (!isVendeur) return;
+
+    const loadCatalogs = async () => {
+      const res = await fetch('/api/seller/catalogs', { credentials: 'include' });
+      if (!res.ok) return;
+      const data = await res.json();
+      setCatalogs(data);
+    };
+
+    void loadCatalogs();
+  }, [isVendeur]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -483,7 +513,7 @@ export default function ParametresPage() {
         <h2 className="text-lg font-semibold text-gray-800 mb-4">🏢 Mon entreprise</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Nom de l'entreprise</label>
+            <label className="block text-sm font-medium text-gray-700">Nom de l&apos;entreprise</label>
             <input
               type="text"
               value={formData.companyName}
@@ -517,7 +547,16 @@ export default function ParametresPage() {
             {formData.logoUrl && (
               <div className="mt-2 p-4 border rounded-lg bg-gray-50">
                 <p className="text-sm text-gray-500 mb-1">Aperçu :</p>
-                <img src={formData.logoUrl} alt="Logo" className="max-h-20 object-contain" />
+                <div className="max-h-20 overflow-hidden rounded border border-gray-200 bg-white">
+                  <Image
+                    src={formData.logoUrl}
+                    alt="Logo"
+                    width={160}
+                    height={80}
+                    unoptimized
+                    className="max-h-20 w-auto object-contain"
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -588,58 +627,67 @@ export default function ParametresPage() {
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase">Agent</th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase">Type</th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase">Statut</th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase">Valable jusqu'au</th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {userAgents.map((ua) => {
-                  const statusInfo = getStatusLabel(ua.status);
-                  const endDate = ua.status === 'TRIAL' ? ua.trialEndDate : ua.endDate;
-                  return (
-                    <tr key={ua.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm font-medium text-gray-800 flex items-center gap-2">
-                        {getAgentIcon(ua.agent.type)}
-                        {ua.agent.name}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-500">{ua.agent.type}</td>
-                      <td className="px-4 py-3 text-sm">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusInfo.color}`}>
-                          {statusInfo.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-500">
-                        {endDate ? new Date(endDate).toLocaleDateString() : "—"}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-right">
-                        {ua.status === 'TRIAL' || ua.status === 'ACTIVE' ? (
-                          <button
-                            onClick={() => cancelAgent(ua.id)}
-                            disabled={cancellingAgentId === ua.id}
-                            className="text-red-600 hover:text-red-800 disabled:opacity-50"
-                          >
-                            {cancellingAgentId === ua.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin inline" />
-                            ) : (
-                              'Résilier'
-                            )}
-                          </button>
-                        ) : (
-                          <span className="text-xs text-gray-400">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {userAgents.map((ua, index) => {
+              const agentMeta = ua.agent ?? { name: ua.customName || 'Agent', type: 'vendeur' };
+              const agentName = ua.customName || agentMeta.name || 'Agent';
+              const agentType = agentMeta.type || 'vendeur';
+              const statusInfo = getStatusLabel(ua.status);
+              const endDate = ua.status === 'TRIAL' ? ua.trialEndDate : ua.endDate;
+              const palette = [
+                'from-blue-50 to-blue-100 border-blue-200',
+                'from-violet-50 to-violet-100 border-violet-200',
+                'from-emerald-50 to-emerald-100 border-emerald-200',
+                'from-amber-50 to-amber-100 border-amber-200',
+                'from-rose-50 to-rose-100 border-rose-200',
+                'from-cyan-50 to-cyan-100 border-cyan-200',
+              ];
+
+              return (
+                <div
+                  key={ua.id}
+                  className={`bg-gradient-to-br ${palette[index % palette.length]} border rounded-2xl p-4 shadow-sm`}
+                >
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="bg-white/80 rounded-lg p-2 shadow-sm">{getAgentIcon(agentType)}</div>
+                      <div>
+                        <h3 className="font-semibold text-gray-800">{agentName}</h3>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide">{agentType}</p>
+                      </div>
+                    </div>
+                    <span className={`px-2 py-1 rounded-full text-[10px] font-medium ${statusInfo.color}`}>
+                      {statusInfo.label}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 space-y-2 text-sm text-gray-700">
+                    <div className="flex justify-between gap-3">
+                      <span className="text-gray-500">Rôle</span>
+                      <span className="font-medium">{agentType}</span>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span className="text-gray-500">Valable</span>
+                      <span className="font-medium">{endDate ? new Date(endDate).toLocaleDateString() : '—'}</span>
+                    </div>
+                  </div>
+
+                  {(ua.status === 'TRIAL' || ua.status === 'ACTIVE') && (
+                    <button
+                      onClick={() => cancelAgent(ua.id)}
+                      disabled={cancellingAgentId === ua.id}
+                      className="mt-4 w-full text-sm bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 transition"
+                    >
+                      {cancellingAgentId === ua.id ? (
+                        <span className="flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Annulation...</span>
+                      ) : (
+                        'Annuler'
+                      )}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -765,7 +813,7 @@ export default function ParametresPage() {
         {services.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             <p>Aucune prestation configurée.</p>
-            <p className="text-sm">Ajoutez vos prestations pour qu'elles apparaissent dans vos devis.</p>
+            <p className="text-sm">Ajoutez vos prestations pour qu&apos;elles apparaissent dans vos devis.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -929,7 +977,7 @@ export default function ParametresPage() {
                     onChange={(e) => setServiceForm({ ...serviceForm, serviceCategory: e.target.value })}
                     className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                   />
-                  <p className="text-xs text-gray-400 mt-1">Exemples : Livraison, Conseil technique, Location d'outillage.</p>
+                  <p className="text-xs text-gray-400 mt-1">Exemples : Livraison, Conseil technique, Location d&apos;outillage.</p>
                 </div>
               )}
 

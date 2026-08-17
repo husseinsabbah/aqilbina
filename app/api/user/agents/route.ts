@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(
       userAgents.map((userAgent) => ({
-        id: userAgent.agent.id,
+        id: userAgent.id,
         name: userAgent.customName || userAgent.agent.name,
         type: userAgent.agent.type,
         category: userAgent.agent.specialty ?? null,

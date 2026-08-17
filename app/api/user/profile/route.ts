@@ -1,9 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from "@/lib/auth";
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 
-const prisma = new PrismaClient();
+const serializeUserProfile = (user: {
+  id: string;
+  email: string;
+  name: string;
+  companyName?: string | null;
+  brandColor?: string | null;
+  imageUrl?: string | null;
+  trade?: string | null;
+}) => ({
+  ...user,
+  logoUrl: user.imageUrl ?? null,
+  trade: user.trade ?? null,
+});
 
 // ============================================================
 // GET : Récupérer le profil
@@ -23,7 +35,8 @@ export async function GET() {
         name: true,
         companyName: true,
         brandColor: true,
-        logoUrl: true,
+        imageUrl: true,
+        trade: true,
       },
     });
 
@@ -31,7 +44,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Utilisateur introuvable' }, { status: 404 });
     }
 
-    return NextResponse.json(user);
+    return NextResponse.json(serializeUserProfile(user));
   } catch (error) {
     console.error('GET /api/user/profile error:', error);
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });
@@ -43,32 +56,33 @@ export async function GET() {
 // ============================================================
 export async function PUT(request: NextRequest) {
   try {
-    console.log("📌 PUT /api/user/profile appelé");
+    console.log('📌 PUT /api/user/profile appelé');
 
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
-      console.log("❌ Non authentifié");
+      console.log('❌ Non authentifié');
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     }
 
     const body = await request.json();
-    console.log("📦 Body reçu :", body);
+    console.log('📦 Body reçu :', body);
 
-    const { companyName, brandColor, logoUrl } = body;
+    const { companyName, brandColor, logoUrl, trade } = body;
 
     const existingUser = await prisma.user.findUnique({
       where: { id: session.user.id },
     });
 
     if (!existingUser) {
-      console.log("❌ Utilisateur introuvable");
+      console.log('❌ Utilisateur introuvable');
       return NextResponse.json({ error: 'Utilisateur introuvable' }, { status: 404 });
     }
 
-    const updateData: any = {};
+    const updateData: Record<string, string | null> = {};
     if (companyName !== undefined) updateData.companyName = companyName === '' ? null : companyName;
     if (brandColor !== undefined) updateData.brandColor = brandColor === '' ? null : brandColor;
-    if (logoUrl !== undefined) updateData.logoUrl = logoUrl === '' ? null : logoUrl;
+    if (logoUrl !== undefined) updateData.imageUrl = logoUrl === '' ? null : logoUrl;
+    if (trade !== undefined) updateData.trade = trade === '' ? null : trade;
 
     const updatedUser = await prisma.user.update({
       where: { id: session.user.id },
@@ -79,15 +93,16 @@ export async function PUT(request: NextRequest) {
         name: true,
         companyName: true,
         brandColor: true,
-        logoUrl: true,
+        imageUrl: true,
+        trade: true,
       },
     });
 
-    console.log("✅ Utilisateur mis à jour :", updatedUser);
+    console.log('✅ Utilisateur mis à jour :', updatedUser);
 
-    return NextResponse.json(updatedUser);
+    return NextResponse.json(serializeUserProfile(updatedUser));
   } catch (error) {
-    console.error("🔥 Erreur PUT /api/user/profile :", error);
+    console.error('🔥 Erreur PUT /api/user/profile :', error);
     return NextResponse.json(
       { error: 'Erreur serveur : ' + (error as Error).message },
       { status: 500 }

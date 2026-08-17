@@ -71,6 +71,34 @@ export async function GET() {
   return NextResponse.json({ message: 'Route fonctionnelle' });
 }
 
+const ensureCatalogForUser = async (userId: string, name: string, description: string) => {
+  const existing = await prisma.catalog.findFirst({
+    where: { userId, name },
+  });
+
+  if (existing) {
+    return existing;
+  }
+
+  try {
+    return await prisma.catalog.create({
+      data: {
+        userId,
+        name,
+        description,
+      },
+    });
+  } catch (error: unknown) {
+    const prismaError = error as { code?: string };
+    if (prismaError?.code === 'P2002') {
+      return prisma.catalog.findFirst({
+        where: { userId, name },
+      }) ?? null;
+    }
+    throw error;
+  }
+};
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -155,18 +183,23 @@ export async function POST(request: NextRequest) {
             data: { name: catalogName },
           });
         } else {
-          defaultCatalog = await prisma.catalog.create({
-            data: {
-              userId: session.user.id,
-              name: catalogName,
-              description: 'Catalogue principal pour les produits de carrelage',
-            },
-          });
+          defaultCatalog = await ensureCatalogForUser(
+            session.user.id,
+            catalogName,
+            'Catalogue principal pour les produits de carrelage'
+          );
         }
       }
     }
 
     for (let i = 0; i < safeQuantity; i++) {
+      const catalogName = `Catalogue ${customNames[i] || agent.name}`;
+      const agentCatalog = await ensureCatalogForUser(
+        session.user.id,
+        catalogName,
+        `Catalogue de ${customNames[i] || agent.name}`
+      );
+
       const userAgent = await prisma.userAgent.create({
         data: {
           userId: session.user.id,
@@ -177,7 +210,8 @@ export async function POST(request: NextRequest) {
           startDate: new Date(),
         },
       });
-      created.push(userAgent);
+
+      created.push({ ...userAgent, catalog: agentCatalog });
     }
 
     return NextResponse.json({ success: true, agents: created, catalog: defaultCatalog }, { status: 201 });

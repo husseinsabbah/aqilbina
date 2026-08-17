@@ -3,6 +3,70 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
+const TRADE_NAME_OPTIONS = [
+  'Carrelage',
+  'Plomberie',
+  'Électricité',
+  'Peinture',
+  'Menuiserie',
+  'Maçonnerie',
+  'Couvreur',
+  'Isolation',
+  'Climatisation',
+  'Chauffage',
+  'Ventilation',
+  'Étanchéité',
+  'Ferronnerie',
+  'Serrurerie',
+  'Vitrerie',
+  'Autre',
+];
+
+const normalizeName = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const findClosestTradeName = (value: string) => {
+  const cleanValue = normalizeName(value);
+  if (!cleanValue) return '';
+
+  const exact = TRADE_NAME_OPTIONS.find((option) => normalizeName(option) === cleanValue);
+  if (exact) return exact;
+
+  let bestMatch = '';
+  let bestScore = 0;
+
+  TRADE_NAME_OPTIONS.forEach((option) => {
+    const optionValue = normalizeName(option);
+    if (!optionValue) return;
+
+    const startsWith = optionValue.startsWith(cleanValue) || cleanValue.startsWith(optionValue) ? 0.9 : 0;
+    const includes = optionValue.includes(cleanValue) || cleanValue.includes(optionValue) ? 0.7 : 0;
+    const overlap = [...new Set(cleanValue.split(''))].filter((char) => optionValue.includes(char)).length;
+    const overlapScore = overlap > 0 ? overlap / Math.max(cleanValue.length, optionValue.length) : 0;
+    const score = Math.max(startsWith, includes, overlapScore);
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = option;
+    }
+  });
+
+  return bestScore >= 0.3 ? bestMatch : '';
+};
+
+const sanitizeAgentName = (value: string, fallback: string) => {
+  const cleanName = (value || fallback || 'Agent').trim();
+  const normalized = cleanName.replace(/\s+/g, ' ');
+  const match = findClosestTradeName(normalized);
+  return match || normalized;
+};
+
 export async function GET() {
   return NextResponse.json({ message: 'Route fonctionnelle' });
 }
@@ -15,7 +79,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { agentId, quantity = 1 } = body;
+    const { agentId, quantity = 1, agentNames = [] } = body;
 
     if (!agentId) {
       return NextResponse.json({ error: 'agentId requis' }, { status: 400 });
@@ -45,17 +109,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Agent introuvable ou inactif' }, { status: 404 });
     }
 
-    const effectiveAgentId = agent.id;
+    const safeQuantity = Math.max(1, Number(quantity) || 1);
+    const requestedNames = Array.isArray(agentNames) ? agentNames : [];
 
-    const existing = await prisma.userAgent.findFirst({
-      where: {
-        userId: session.user.id,
-        agentId: effectiveAgentId,
-      },
+    const customNames = Array.from({ length: safeQuantity }, (_, index) => {
+      const rawValue = requestedNames[index] ?? '';
+      return sanitizeAgentName(rawValue, `${agent.name} ${index + 1}`);
     });
-    if (existing) {
-      return NextResponse.json({ error: 'Vous avez déjà cet agent' }, { status: 400 });
+
+    const duplicateNames = customNames.filter((name, index) => customNames.findIndex((item) => item.toLowerCase() === name.toLowerCase()) !== index);
+    if (duplicateNames.length > 0) {
+      return NextResponse.json({ error: 'Les noms d’agents doivent être différents' }, { status: 400 });
     }
+
+    const effectiveAgentId = agent.id;
 
     const created = [];
     let defaultCatalog = null;
@@ -99,11 +166,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    for (let i = 0; i < quantity; i++) {
+    for (let i = 0; i < safeQuantity; i++) {
       const userAgent = await prisma.userAgent.create({
         data: {
           userId: session.user.id,
           agentId: effectiveAgentId,
+          customName: customNames[i],
           status: 'TRIAL',
           trialEndDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
           startDate: new Date(),

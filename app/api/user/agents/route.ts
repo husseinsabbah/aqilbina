@@ -30,10 +30,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       userAgents.map((userAgent) => ({
         id: userAgent.agent.id,
-        name: userAgent.agent.name,
+        name: userAgent.customName || userAgent.agent.name,
         type: userAgent.agent.type,
         category: userAgent.agent.specialty ?? null,
         agentId: userAgent.agentId,
+        customName: userAgent.customName,
         status: userAgent.status,
         startDate: userAgent.startDate,
         endDate: userAgent.endDate,

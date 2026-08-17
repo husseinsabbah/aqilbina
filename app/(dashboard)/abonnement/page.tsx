@@ -5,6 +5,72 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Check, Loader2, Crown, Store, Building2, Sparkles, AlertCircle } from "lucide-react";
 
+const AGENT_NAME_SUGGESTIONS = [
+  "Carrelage",
+  "Plomberie",
+  "Électricité",
+  "Peinture",
+  "Menuiserie",
+  "Maçonnerie",
+  "Couvreur",
+  "Isolation",
+  "Climatisation",
+  "Chauffage",
+  "Ventilation",
+  "Étanchéité",
+  "Ferronnerie",
+  "Serrurerie",
+  "Vitrerie",
+  "Autre",
+];
+
+const normalizeSuggestion = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const getClosestSuggestion = (value: string) => {
+  const cleanValue = normalizeSuggestion(value);
+  if (!cleanValue) return "";
+
+  const exact = AGENT_NAME_SUGGESTIONS.find((option) => normalizeSuggestion(option) === cleanValue);
+  if (exact) return exact;
+
+  let bestMatch = "";
+  let bestScore = 0;
+
+  AGENT_NAME_SUGGESTIONS.forEach((option) => {
+    const optionNormalized = normalizeSuggestion(option);
+    if (!optionNormalized) return;
+
+    const startsWithScore = optionNormalized.startsWith(cleanValue) || cleanValue.startsWith(optionNormalized) ? 0.9 : 0;
+    const includesScore = optionNormalized.includes(cleanValue) || cleanValue.includes(optionNormalized) ? 0.7 : 0;
+    const overlap = [...new Set(cleanValue.split(""))].filter((char) => optionNormalized.includes(char)).length;
+    const overlapScore = overlap > 0 ? overlap / Math.max(cleanValue.length, optionNormalized.length) : 0;
+    const score = Math.max(startsWithScore, includesScore, overlapScore);
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = option;
+    }
+  });
+
+  return bestScore >= 0.3 ? bestMatch : "";
+};
+
+const getSuggestions = (query: string) => {
+  const cleanValue = normalizeSuggestion(query);
+  if (!cleanValue) return AGENT_NAME_SUGGESTIONS;
+
+  return [...AGENT_NAME_SUGGESTIONS]
+    .filter((option) => normalizeSuggestion(option).includes(cleanValue) || cleanValue.includes(normalizeSuggestion(option)))
+    .slice(0, 6);
+};
+
 type Agent = {
   id: string;
   name: string;
@@ -24,6 +90,8 @@ export default function AbonnementPage() {
   const [error, setError] = useState("");
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [quantity, setQuantity] = useState(1);
+  const [agentNames, setAgentNames] = useState<string[]>([""]);
+  const [activeNameInput, setActiveNameInput] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showModal, setShowModal] = useState(false);
 
@@ -33,30 +101,60 @@ export default function AbonnementPage() {
       router.push("/login");
       return;
     }
-    fetchAgents();
-  }, [session, status]);
 
-  const fetchAgents = async () => {
-    try {
-      const res = await fetch("/api/agents", { credentials: "include" });
-      if (!res.ok) throw new Error("Erreur");
-      const data = await res.json();
-      setAgents(data.filter((a: Agent) => a.isActive));
-    } catch (err) {
-      setError("Impossible de charger les offres");
-    } finally {
-      setLoading(false);
-    }
-  };
+    const fetchAgents = async () => {
+      try {
+        const res = await fetch("/api/agents", { credentials: "include" });
+        if (!res.ok) throw new Error("Erreur");
+        const data = await res.json();
+        setAgents(data.filter((a: Agent) => a.isActive));
+      } catch {
+        setError("Impossible de charger les offres");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAgents();
+  }, [session, status, router]);
 
   const handleChoose = (agent: Agent) => {
     setSelectedAgent(agent);
     setQuantity(1);
+    setAgentNames([agent.specialty || "Carrelage"]);
+    setActiveNameInput(0);
     setShowModal(true);
+  };
+
+  const updateAgentCount = (nextQuantity: number) => {
+    const safeQuantity = Math.max(1, Number.isFinite(nextQuantity) ? nextQuantity : 1);
+    setQuantity(safeQuantity);
+    setAgentNames((prev) => {
+      const nextNames = Array.from({ length: safeQuantity }, (_, index) => prev[index]?.trim() || "");
+      if (safeQuantity === 1 && !nextNames[0]) {
+        nextNames[0] = selectedAgent?.specialty || "Carrelage";
+      }
+      return nextNames;
+    });
   };
 
   const handleConfirm = async () => {
     if (!selectedAgent) return;
+
+    const fixedNames = Array.from({ length: quantity }, (_, index) => {
+      const rawValue = (agentNames[index] || "").trim();
+      if (!rawValue) {
+        return selectedAgent.specialty || "Carrelage";
+      }
+      return getClosestSuggestion(rawValue) || rawValue;
+    });
+
+    const hasDuplicateNames = new Set(fixedNames.map((name) => name.toLowerCase())).size !== fixedNames.length;
+    if (hasDuplicateNames) {
+      setError("Les noms d'agents doivent être différents pour chaque agent.");
+      return;
+    }
+
     setSubmitting(true);
     try {
       const res = await fetch("/api/user/agents/activate", {
@@ -66,6 +164,7 @@ export default function AbonnementPage() {
         body: JSON.stringify({
           agentId: selectedAgent.id,
           quantity: quantity,
+          agentNames: fixedNames,
         }),
       });
       if (!res.ok) {
@@ -105,9 +204,9 @@ export default function AbonnementPage() {
             🔥 Choisissez votre agent IA
           </h1>
           <p className="mt-4 text-xl text-gray-500 max-w-2xl mx-auto">
-            Des agents spécialisés pour vous accompagner au quotidien. 
+            Des agents spécialisés pour vous accompagner au quotidien.
             <span className="block text-blue-600 font-semibold mt-2">
-              ✅ 14 jours d'essai gratuit offerts – Aucune carte demandée.
+              ✅ 14 jours d&apos;essai gratuit offerts – Aucune carte demandée.
             </span>
           </p>
         </div>
@@ -189,15 +288,15 @@ export default function AbonnementPage() {
           <h2 className="text-2xl font-bold text-gray-800 mb-4">❓ Questions fréquentes</h2>
           <div className="space-y-4">
             <div>
-              <h4 className="font-semibold text-gray-700">Comment fonctionne l'essai gratuit ?</h4>
-              <p className="text-gray-600 text-sm">Vous bénéficiez de 14 jours d'essai complet, sans fournir de carte bancaire. Au 15e jour, vous serez invité à payer pour continuer.</p>
+              <h4 className="font-semibold text-gray-700">Comment fonctionne l&apos;essai gratuit ?</h4>
+              <p className="text-gray-600 text-sm">Vous bénéficiez de 14 jours d&apos;essai complet, sans fournir de carte bancaire. Au 15e jour, vous serez invité à payer pour continuer.</p>
             </div>
             <div>
-              <h4 className="font-semibold text-gray-700">Puis-je arrêter l'essai avant la fin ?</h4>
+              <h4 className="font-semibold text-gray-700">Puis-je arrêter l&apos;essai avant la fin ?</h4>
               <p className="text-gray-600 text-sm">Oui, vous pouvez arrêter à tout moment. Vos données seront conservées 30 jours au cas où vous reviendriez.</p>
             </div>
             <div>
-              <h4 className="font-semibold text-gray-700">Que se passe-t-il après l'essai ?</h4>
+              <h4 className="font-semibold text-gray-700">Que se passe-t-il après l&apos;essai ?</h4>
               <p className="text-gray-600 text-sm">Vous recevrez un rappel, puis votre carte sera débitée automatiquement si vous avez souscrit. Sinon, le service sera suspendu.</p>
             </div>
           </div>
@@ -223,13 +322,13 @@ export default function AbonnementPage() {
             </p>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Nombre d'agents (1 inclus)
+                Nombre d&apos;agents (1 inclus)
               </label>
               <input
                 type="number"
                 min="1"
                 value={quantity}
-                onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                onChange={(e) => updateAgentCount(Math.max(1, parseInt(e.target.value) || 1))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
               />
               <p className="text-xs text-gray-400 mt-1">
@@ -238,10 +337,89 @@ export default function AbonnementPage() {
                   : `${quantity} agents (${selectedAgent.priceMonthly * quantity}€ / mois)`}
               </p>
             </div>
+
+            <div className="space-y-3 mb-4">
+              {Array.from({ length: quantity }, (_, index) => {
+                const value = agentNames[index] || "";
+                const suggestions = getSuggestions(value);
+
+                return (
+                  <div key={index} className="relative">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {quantity > 1 ? <>Nom de l&apos;agent {index + 1}</> : "Nom de l&apos;agent"}
+                    </label>
+                    <input
+                      type="text"
+                      value={value}
+                      onFocus={() => setActiveNameInput(index)}
+                      onChange={(e) => {
+                        const nextValue = e.target.value;
+                        setAgentNames((prev) => {
+                          const updated = [...prev];
+                          updated[index] = nextValue;
+                          return updated;
+                        });
+                        setActiveNameInput(index);
+                      }}
+                      onBlur={() => {
+                        window.setTimeout(() => setActiveNameInput((current) => (current === index ? null : current)), 150);
+                      }}
+                      placeholder={selectedAgent.specialty || "Carrelage"}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                    />
+
+                    {activeNameInput === index && suggestions.length > 0 && (
+                      <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
+                        {suggestions.map((option) => (
+                          <button
+                            key={option}
+                            type="button"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => {
+                              setAgentNames((prev) => {
+                                const updated = [...prev];
+                                updated[index] = option;
+                                return updated;
+                              });
+                              setActiveNameInput(null);
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 text-gray-700"
+                          >
+                            {option}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            setAgentNames((prev) => {
+                              const updated = [...prev];
+                              updated[index] = "";
+                              return updated;
+                            });
+                            setActiveNameInput(index);
+                          }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 text-blue-600 border-t border-gray-200"
+                        >
+                          Autre (écrire un nom personnalisé)
+                        </button>
+                      </div>
+                    )}
+
+                    {value && getClosestSuggestion(value) && getClosestSuggestion(value) !== value && (
+                      <p className="mt-1 text-xs text-blue-600">
+                        Suggestion : <span className="font-medium">{getClosestSuggestion(value)}</span>
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
             <div className="bg-gray-50 rounded-lg p-3 mb-4 text-sm">
               <p className="font-semibold">Résumé</p>
               <p>Abonnement : {selectedAgent.priceMonthly * quantity}€ / mois</p>
-              <p className="text-green-600">✅ 14 jours d'essai offerts</p>
+              <p className="text-green-600">✅ 14 jours d&apos;essai offerts</p>
             </div>
             <button
               onClick={handleConfirm}
@@ -254,7 +432,7 @@ export default function AbonnementPage() {
                   Activation...
                 </>
               ) : (
-                "Commencer l'essai gratuit"
+                "Commencer l&apos;essai gratuit"
               )}
             </button>
           </div>

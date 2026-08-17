@@ -63,6 +63,7 @@ model UserAgent {
   agentId     String
   agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
+  customName  String?
   status      String   @default("PENDING") // PENDING, TRIAL, ACTIVE, CANCELLED, EXPIRED
   
   startDate   DateTime @default(now())
@@ -78,7 +79,7 @@ model UserAgent {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@unique([userId, agentId], name: "userId_agentId")
+  @@unique([userId, agentId, customName], name: "userId_agentId_customName")
 }
 
 model Catalog {

@@ -1,11 +1,10 @@
+// app/api/projects/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../../../auth';
+import { authOptions } from '@/app/auth';
+import { prisma } from '@/lib/prisma';
 
-const prisma = new PrismaClient();
-
-// GET : récupérer tous les projets de l'utilisateur connecté
+// ===== GET : Récupérer les projets de l’utilisateur connecté =====
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
@@ -15,8 +14,17 @@ export async function GET() {
 
     const projects = await prisma.project.findMany({
       where: { userId: session.user.id },
+      include: {
+        items: {
+          include: {
+            product: true,
+            service: true,
+          },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     });
+
     return NextResponse.json(projects);
   } catch (error) {
     console.error('GET /api/projects error:', error);
@@ -24,7 +32,7 @@ export async function GET() {
   }
 }
 
-// POST : créer un nouveau projet (avec tous les nouveaux champs)
+// ===== POST : Créer un nouveau projet =====
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -33,57 +41,78 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    console.log('📦 Body reçu :', body);
 
+    // Extraction sécurisée des champs
     const {
       name,
-      budgetEstimate,
       description,
       type,
       surface,
-      length,
-      width,
-      height,
-      floorWork,
-      wallCount,
-      ceilingWork,
-      splashback,
-      splashHeight,
-      renovationType,
+      budgetEstimate,
+      items = [],
+      solDetails,
+      murDetails,
     } = body;
 
-    if (!name) {
-      return NextResponse.json({ error: 'Le nom est obligatoire' }, { status: 400 });
+    if (!name || !items || items.length === 0) {
+      return NextResponse.json(
+        { error: 'Nom et au moins un item (produit ou service) sont obligatoires' },
+        { status: 400 }
+      );
     }
 
-    const project = await prisma.project.create({
-      data: {
-        name,
-        budgetEstimate: budgetEstimate ? parseFloat(budgetEstimate) : null,
+    // Construire la description enrichie (si des détails sol/murs sont fournis)
+    let fullDescription = description || null;
+    if (solDetails || murDetails) {
+      const details = {
         description: description || null,
-        type: type || null,
-        surface: surface ? parseFloat(surface) : null,
-        length: length ? parseFloat(length) : null,
-        width: width ? parseFloat(width) : null,
-        height: height ? parseFloat(height) : null,
-        floorWork: floorWork || null,
-        wallCount: wallCount ? parseInt(wallCount) : null,
-        ceilingWork: ceilingWork || null,
-        splashback: splashback ?? null, // booléen
-        splashHeight: splashHeight ? parseFloat(splashHeight) : null,
-        renovationType: renovationType || null,
-        userId: session.user.id,
-        status: 'BROUILLON',
-      },
+        sol: solDetails || null,
+        mur: murDetails || null,
+      };
+      fullDescription = JSON.stringify(details);
+    }
+
+    // Préparer les items (produits et services)
+    const projectItems = items.map((item: any) => {
+      if (item.productId) {
+        return {
+          productId: item.productId,
+          quantity: item.quantity,
+          unitPriceHtAtSale: item.unitPriceHtAtSale,
+          tvaRate: item.tvaRate || 20,
+        };
+      } else if (item.serviceId) {
+        return {
+          serviceId: item.serviceId,
+          quantity: item.quantity,
+          unitPriceHtAtSale: item.unitPriceHtAtSale,
+          tvaRate: item.tvaRate || 20,
+        };
+      } else {
+        throw new Error('Chaque item doit avoir soit productId soit serviceId');
+      }
     });
 
-    console.log('✅ Projet créé :', project.id);
+    // Créer le projet
+    const project = await prisma.project.create({
+      data: {
+        userId: session.user.id,
+        name,
+        description: fullDescription,
+        type: type || null,
+        surface: surface ? parseFloat(surface) : null,
+        budgetEstimate: budgetEstimate ? parseFloat(budgetEstimate) : null,
+        status: 'BROUILLON',
+        items: {
+          create: projectItems,
+        },
+      },
+      include: { items: true },
+    });
+
     return NextResponse.json(project, { status: 201 });
   } catch (error) {
     console.error('POST /api/projects error:', error);
-    return NextResponse.json(
-      { error: 'Erreur serveur : ' + (error as Error).message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });
   }
 }

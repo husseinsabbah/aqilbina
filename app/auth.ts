@@ -1,8 +1,6 @@
 import NextAuth, { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -17,7 +15,7 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
-        const user: any = await prisma.user.findUnique({
+        const user = await prisma.user.findUnique({
           where: { email: credentials.email.toLowerCase() },
         });
 
@@ -25,6 +23,7 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
+        // ⚠️ Attention : ici le mot de passe est en clair dans la base (à sécuriser avec bcrypt plus tard)
         const storedPassword = user.password ?? null;
         const isValidPassword =
           storedPassword !== null && credentials.password === storedPassword;
@@ -37,19 +36,33 @@ export const authOptions: NextAuthOptions = {
           id: user.id,
           email: user.email,
           name: user.name ?? user.email,
+          role: user.role,
+          trade: user.trade,
         };
       },
     }),
   ],
-  session: { strategy: "jwt" },
-  pages: { signIn: "/login" },
+  session: {
+    strategy: "jwt",
+  },
+  pages: {
+    signIn: "/login",
+  },
   callbacks: {
     async jwt({ token, user }) {
-      if (user) token.id = user.id;
+      if (user) {
+        token.id = user.id;
+        token.role = user.role;
+        token.trade = user.trade;
+      }
       return token;
     },
     async session({ session, token }) {
-      if (session.user) session.user.id = token.id as string;
+      if (session.user) {
+        session.user.id = token.id as string;
+        session.user.role = token.role as string;
+        session.user.trade = token.trade as string;
+      }
       return session;
     },
   },

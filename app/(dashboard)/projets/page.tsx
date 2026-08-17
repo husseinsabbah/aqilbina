@@ -19,22 +19,38 @@ export default function ProjetsPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [showModal, setShowModal] = useState(false);
+
   const [formData, setFormData] = useState({
     name: "",
     budgetEstimate: "",
     description: "",
     type: "",
-    surface: "",
     length: "",
     width: "",
     height: "",
+    surface: "",
     floorWork: "",
     wallCount: "",
+    wallWork: "",
     ceilingWork: "",
+    countertop: false,
+    countertopMaterial: "",
+    countertopLength: "",
+    countertopDepth: "",
+    countertopThickness: "",
     splashback: false,
     splashHeight: "",
     renovationType: "",
   });
+
+  // Calcul automatique de la surface
+  const updateSurface = (length: string, width: string) => {
+    const l = parseFloat(length);
+    const w = parseFloat(width);
+    if (l && w && !isNaN(l) && !isNaN(w)) {
+      setFormData(prev => ({ ...prev, surface: (l * w).toFixed(2) }));
+    }
+  };
 
   const fetchProjects = async () => {
     try {
@@ -66,13 +82,19 @@ export default function ProjetsPage() {
           budgetEstimate: parseFloat(formData.budgetEstimate) || null,
           description: formData.description || null,
           type: formData.type || null,
-          surface: parseFloat(formData.surface) || null,
           length: parseFloat(formData.length) || null,
           width: parseFloat(formData.width) || null,
           height: parseFloat(formData.height) || null,
+          surface: parseFloat(formData.surface) || null,
           floorWork: formData.floorWork || null,
           wallCount: parseInt(formData.wallCount) || null,
+          wallWork: formData.wallWork || null,
           ceilingWork: formData.ceilingWork || null,
+          countertop: formData.countertop,
+          countertopMaterial: formData.countertopMaterial || null,
+          countertopLength: parseFloat(formData.countertopLength) || null,
+          countertopDepth: parseFloat(formData.countertopDepth) || null,
+          countertopThickness: parseFloat(formData.countertopThickness) || null,
           splashback: formData.splashback,
           splashHeight: parseFloat(formData.splashHeight) || null,
           renovationType: formData.renovationType || null,
@@ -93,13 +115,19 @@ export default function ProjetsPage() {
         budgetEstimate: "",
         description: "",
         type: "",
-        surface: "",
         length: "",
         width: "",
         height: "",
+        surface: "",
         floorWork: "",
         wallCount: "",
+        wallWork: "",
         ceilingWork: "",
+        countertop: false,
+        countertopMaterial: "",
+        countertopLength: "",
+        countertopDepth: "",
+        countertopThickness: "",
         splashback: false,
         splashHeight: "",
         renovationType: "",
@@ -125,7 +153,6 @@ export default function ProjetsPage() {
 
   return (
     <div>
-      {/* En-tête */}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-800">📁 Projets</h1>
         <button
@@ -137,7 +164,6 @@ export default function ProjetsPage() {
         </button>
       </div>
 
-      {/* Barre de recherche */}
       <div className="relative mb-6">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
         <input
@@ -149,7 +175,6 @@ export default function ProjetsPage() {
         />
       </div>
 
-      {/* Tableau */}
       {loading ? (
         <div className="text-center py-12 text-gray-500">⏳ Chargement...</div>
       ) : (
@@ -205,17 +230,17 @@ export default function ProjetsPage() {
         </div>
       )}
 
-      {/* Modal de création */}
+      {/* ===== MODALE DE CRÉATION (FORMULAIRE COMPLET) ===== */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl w-full max-w-md p-6 relative">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto">
+          <div className="bg-white rounded-xl w-full max-w-2xl p-6 relative my-8 max-h-[90vh] overflow-y-auto">
             <button onClick={() => setShowModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
               ✕
             </button>
-            <h2 className="text-xl font-bold mb-4">Nouveau projet</h2>
-            <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+            <h2 className="text-xl font-bold mb-4">📝 Nouveau projet</h2>
+            <form onSubmit={handleSubmit} className="space-y-4">
 
-              {/* Nom, budget, description */}
+              {/* ---- Général ---- */}
               <input
                 name="name"
                 placeholder="Nom du projet *"
@@ -224,14 +249,31 @@ export default function ProjetsPage() {
                 className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 required
               />
-              <input
-                name="budgetEstimate"
-                placeholder="Budget estimé (€)"
-                type="number"
-                value={formData.budgetEstimate}
-                onChange={(e) => setFormData({ ...formData, budgetEstimate: e.target.value })}
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Type de projet</option>
+                  <option value="cuisine">🍳 Cuisine</option>
+                  <option value="sdb">🚿 Salle de bain</option>
+                  <option value="terrasse">🌿 Terrasse</option>
+                  <option value="salon">🛋️ Salon</option>
+                  <option value="chambre">🛏️ Chambre</option>
+                  <option value="bureau">💼 Bureau</option>
+                  <option value="jardin">🌳 Jardin</option>
+                  <option value="autres">🔧 Autres</option>
+                </select>
+                <input
+                  name="budgetEstimate"
+                  placeholder="Budget estimé (€)"
+                  type="number"
+                  value={formData.budgetEstimate}
+                  onChange={(e) => setFormData({ ...formData, budgetEstimate: e.target.value })}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
               <textarea
                 name="description"
                 placeholder="Description interne (optionnel)"
@@ -241,16 +283,7 @@ export default function ProjetsPage() {
                 className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
               />
 
-              {/* Type de projet */}
-              <input
-                name="type"
-                placeholder="Type de projet (ex: cuisine, sdb, terrasse)"
-                value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-
-              {/* Dimensions */}
+              {/* ---- Dimensions ---- */}
               <div className="grid grid-cols-3 gap-2">
                 <input
                   name="length"
@@ -258,7 +291,10 @@ export default function ProjetsPage() {
                   type="number"
                   step="0.1"
                   value={formData.length}
-                  onChange={(e) => setFormData({ ...formData, length: e.target.value })}
+                  onChange={(e) => {
+                    setFormData({ ...formData, length: e.target.value });
+                    updateSurface(e.target.value, formData.width);
+                  }}
                   className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
                 <input
@@ -267,7 +303,10 @@ export default function ProjetsPage() {
                   type="number"
                   step="0.1"
                   value={formData.width}
-                  onChange={(e) => setFormData({ ...formData, width: e.target.value })}
+                  onChange={(e) => {
+                    setFormData({ ...formData, width: e.target.value });
+                    updateSurface(formData.length, e.target.value);
+                  }}
                   className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
                 <input
@@ -280,78 +319,171 @@ export default function ProjetsPage() {
                   className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-
-              {/* Surface (calculée automatiquement, mais on laisse en manuel pour l'instant) */}
               <input
                 name="surface"
-                placeholder="Surface au sol (m²) (calculée si longueur/largeur)"
+                placeholder="Surface (m²) - calculée automatiquement"
                 type="number"
                 step="0.1"
                 value={formData.surface}
                 onChange={(e) => setFormData({ ...formData, surface: e.target.value })}
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                readOnly
               />
 
-              {/* Sol */}
-              <select
-                name="floorWork"
-                value={formData.floorWork}
-                onChange={(e) => setFormData({ ...formData, floorWork: e.target.value })}
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Sol - que faire ?</option>
-                <option value="carrelage">Carrelage</option>
-                <option value="peinture">Peinture</option>
-                <option value="aucun">Conserver</option>
-              </select>
-
-              {/* Murs */}
-              <input
-                name="wallCount"
-                placeholder="Nombre de murs à traiter (0-4)"
-                type="number"
-                min="0"
-                max="4"
-                value={formData.wallCount}
-                onChange={(e) => setFormData({ ...formData, wallCount: e.target.value })}
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-
-              {/* Plafond */}
-              <select
-                name="ceilingWork"
-                value={formData.ceilingWork}
-                onChange={(e) => setFormData({ ...formData, ceilingWork: e.target.value })}
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Plafond - que faire ?</option>
-                <option value="carrelage">Carrelage</option>
-                <option value="peinture">Peinture</option>
-                <option value="aucun">Conserver</option>
-              </select>
-
-              {/* Crédence */}
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={formData.splashback}
-                  onChange={(e) => setFormData({ ...formData, splashback: e.target.checked })}
-                  className="w-4 h-4"
-                />
-                <label className="text-sm font-medium text-gray-700">Crédence (mur derrière l'évier/plaque)</label>
+              {/* ---- SOL ---- */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">🧱 Sol</label>
+                <div className="flex flex-wrap gap-4">
+                  {['carrelage', 'peinture', 'conserver'].map((option) => (
+                    <label key={option} className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="floorWork"
+                        value={option}
+                        checked={formData.floorWork === option}
+                        onChange={(e) => setFormData({ ...formData, floorWork: e.target.value })}
+                      />
+                      {option === 'carrelage' && 'Carrelage'}
+                      {option === 'peinture' && 'Peinture'}
+                      {option === 'conserver' && 'Conserver'}
+                    </label>
+                  ))}
+                </div>
               </div>
-              {formData.splashback && (
+
+              {/* ---- MURS ---- */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">🧱 Murs</label>
                 <input
-                  name="splashHeight"
-                  placeholder="Hauteur crédence (cm)"
+                  name="wallCount"
+                  placeholder="Nombre de murs à traiter (0-4)"
                   type="number"
-                  value={formData.splashHeight}
-                  onChange={(e) => setFormData({ ...formData, splashHeight: e.target.value })}
+                  min="0"
+                  max="4"
+                  value={formData.wallCount}
+                  onChange={(e) => setFormData({ ...formData, wallCount: e.target.value })}
                   className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
+                {parseInt(formData.wallCount || '0') > 0 && (
+                  <div className="mt-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Que voulez-vous faire des murs ?</label>
+                    <div className="flex flex-wrap gap-4">
+                      {['carrelage', 'peinture', 'conserver'].map((option) => (
+                        <label key={option} className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="wallWork"
+                            value={option}
+                            checked={formData.wallWork === option}
+                            onChange={(e) => setFormData({ ...formData, wallWork: e.target.value })}
+                          />
+                          {option === 'carrelage' && 'Carrelage / Faïence'}
+                          {option === 'peinture' && 'Peinture'}
+                          {option === 'conserver' && 'Conserver'}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ---- PLAN DE TRAVAIL (cuisine uniquement) ---- */}
+              {formData.type === 'cuisine' && (
+                <div className="border-t border-gray-200 pt-4">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.countertop}
+                      onChange={(e) => setFormData({ ...formData, countertop: e.target.checked })}
+                    />
+                    🪚 Ajouter un plan de travail
+                  </label>
+                  {formData.countertop && (
+                    <div className="mt-2 space-y-2">
+                      <select
+                        value={formData.countertopMaterial}
+                        onChange={(e) => setFormData({ ...formData, countertopMaterial: e.target.value })}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Matériau</option>
+                        <option value="stratifié">Stratifié</option>
+                        <option value="pierre">Pierre</option>
+                        <option value="bois">Bois</option>
+                        <option value="inox">Inox</option>
+                        <option value="autre">Autre</option>
+                      </select>
+                      <div className="grid grid-cols-3 gap-2">
+                        <input
+                          placeholder="Longueur (cm)"
+                          type="number"
+                          value={formData.countertopLength}
+                          onChange={(e) => setFormData({ ...formData, countertopLength: e.target.value })}
+                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+                        <input
+                          placeholder="Profondeur (cm)"
+                          type="number"
+                          value={formData.countertopDepth}
+                          onChange={(e) => setFormData({ ...formData, countertopDepth: e.target.value })}
+                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+                        <input
+                          placeholder="Épaisseur (mm)"
+                          type="number"
+                          value={formData.countertopThickness}
+                          onChange={(e) => setFormData({ ...formData, countertopThickness: e.target.value })}
+                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
 
-              {/* Type de rénovation */}
+              {/* ---- PLAFOND ---- */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">🧱 Plafond</label>
+                <div className="flex flex-wrap gap-4">
+                  {['peinture', 'conserver'].map((option) => (
+                    <label key={option} className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="ceilingWork"
+                        value={option}
+                        checked={formData.ceilingWork === option}
+                        onChange={(e) => setFormData({ ...formData, ceilingWork: e.target.value })}
+                      />
+                      {option === 'peinture' && 'Peinture'}
+                      {option === 'conserver' && 'Conserver'}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* ---- CRÉDENCE (cuisine) ---- */}
+              {formData.type === 'cuisine' && (
+                <div>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.splashback}
+                      onChange={(e) => setFormData({ ...formData, splashback: e.target.checked })}
+                    />
+                    🧱 Ajouter une crédence
+                  </label>
+                  {formData.splashback && (
+                    <input
+                      placeholder="Hauteur (cm)"
+                      type="number"
+                      value={formData.splashHeight}
+                      onChange={(e) => setFormData({ ...formData, splashHeight: e.target.value })}
+                      className="mt-2 w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* ---- TYPE DE RÉNOVATION ---- */}
               <select
                 name="renovationType"
                 value={formData.renovationType}
@@ -359,8 +491,8 @@ export default function ProjetsPage() {
                 className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Type de rénovation</option>
-                <option value="rafraichissement">Rafraîchissement (pose par‑dessus)</option>
-                <option value="complet">Rénovation complète (démolition)</option>
+                <option value="rafraichissement">Rafraîchissement</option>
+                <option value="complet">Rénovation complète</option>
               </select>
 
               <button

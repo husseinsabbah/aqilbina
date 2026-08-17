@@ -1,149 +1,269 @@
-// prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
 model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  password      String
+  role          String   @default("user")
+  trade         String?
+  companyName   String?
+  phone         String?
+  address       String?
+  city          String?
+  description   String?
+  website       String?
+  imageUrl      String?
+  brandColor    String?  @default("#1E40AF")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  products      Product[]
+  services      Service[]
+  projects      Project[]
+  proposals     VendorProposal[]
+  sellerListings SellerListing[]
+  notifications Notification[]
+  userAgents    UserAgent[]
+  subscriptions Subscription[]
+  workflows     Workflow[]
+  workflowActions WorkflowAction[]
+  catalogs      Catalog[]
+}
+
+model Agent {
   id          String   @id @default(cuid())
-  email       String   @unique
-  password    String?
-  name        String?
-  companyName String?
-  brandColor  String?
-  logoUrl     String?
-  trade       String?   // Métier : plombier, électricien, maçon, etc.
+  name        String
+  type        String   // artisan, vendeur, societe, sur-mesure
+  specialty   String?  // matériel, quincaillerie, carrelage, etc.
+  description String?
+  priceMonthly Float   @default(0)
+  priceYearly  Float   @default(0)
+  isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  projects Project[]
+  userAgents  UserAgent[]
+  subscriptions Subscription[] // relation inverse
+  workflows   Workflow[]       // relation inverse
+}
+
+model UserAgent {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentId     String
+  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  status      String   @default("PENDING") // PENDING, TRIAL, ACTIVE, CANCELLED, EXPIRED
+  
+  startDate   DateTime @default(now())
+  endDate     DateTime?
+  trialEndDate DateTime?
+  cancelledAt DateTime?
+  graceEndAt  DateTime?
+
+  autoRenew   Boolean  @default(false)
+  stripeSubscriptionId String?
+  stripeCustomerId     String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, agentId], name: "userId_agentId")
+}
+
+model Catalog {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products    Product[]
+
+  @@unique([userId, name])
 }
 
 model Product {
   id            String   @id @default(cuid())
   userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   name          String
   description   String?
   category      String
+  brand         String?
   purchasePrice Float
   salePrice     Float
   stock         Int      @default(0)
+  reservedStock Int      @default(0)
   tvaRate       Float    @default(20.0)
   imageUrl      String?
+  catalogId     String
+  catalog       Catalog  @relation(fields: [catalogId], references: [id], onDelete: Cascade)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  items ProjectItem[]
+  projectItems   ProjectItem[]
+  vendorProposals VendorProposal[]
+  sellerListings SellerListing[]
 }
 
 model Service {
-  id          String   @id @default(cuid())
-  userId      String
-  name        String
-  unit        String
-  unitPriceHt Float
-  tvaRate     Float    @default(20.0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  description     String?
+  serviceCategory String   @default("prestation")
+  unit            String   @default("m²")
+  unitPrice       Float
+  isActive        Boolean  @default(true)
+  isDefault       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  items ProjectItem[]
+  projectItems    ProjectItem[]
 }
 
 model Project {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id]) // 👈 AJOUT
-  name        String
-  status      String   @default("BROUILLON")
-  budgetEstimate Float?
-  description String?
-  paymentNotes String?
-  attachmentUrl String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Nouveaux champs pour le projet
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  description   String?
   type          String?
-  surface       Float?   // surface au sol (m²)
-  length        Float?   // longueur en mètres
-  width         Float?   // largeur en mètres
-  height        Float?   // hauteur sous plafond en mètres
-  floorWork     String?  // 'carrelage', 'peinture', 'aucun'
-  wallCount     Int?     // nombre de murs à traiter (0-4)
-  ceilingWork   String?  // 'carrelage', 'peinture', 'aucun'
-  splashback    Boolean? // crédence oui/non
-  splashHeight  Float?   // hauteur de la crédence en cm
-  renovationType String? // 'rafraichissement', 'complet'
+  surface       Float?
+  budgetEstimate Float?
+  status        String   @default("BROUILLON")
+  clientName    String?
+  clientPhone   String?
+  clientEmail   String?
+  clientAddress String?
+  startDate     DateTime?
+  endDate       DateTime?
+  paymentNotes  String?
+  attachmentUrl String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  // Relation inverse vers ProjectItem
-  items ProjectItem[]
+  items           ProjectItem[]
+  vendorProposals VendorProposal[]
 }
 
 model ProjectItem {
-  id          String   @id @default(cuid())
-  projectId   String
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  productId   String?
-  product     Product? @relation(fields: [productId], references: [id])
-  serviceId   String?
-  service     Service? @relation(fields: [serviceId], references: [id])
-  quantity    Float
+  id              String   @id @default(cuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  productId       String?
+  product         Product? @relation(fields: [productId], references: [id])
+  serviceId       String?
+  service         Service? @relation(fields: [serviceId], references: [id])
+  quantity        Float
   unitPriceHtAtSale Float
-  tvaRate     Float
-  createdAt   DateTime @default(now())
+  tvaRate         Float    @default(20.0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
-// ============================================
-// MODÈLES POUR L'ASSISTANT IA (BASE DE CONNAISSANCES)
-// ============================================
-
-model ProjectCategory {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  label       String
-  description String?
-  icon        String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  items ProjectTemplateItem[]
+model VendorProposal {
+  id              String   @id @default(cuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quantity        Float
+  unitPrice       Float
+  message         String?
+  status          String   @default("EN_ATTENTE")
+  marketingMessage String?
+  deliveryDate    DateTime?
+  expirationDate  DateTime?
+  feedbackReason  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
-model ProjectTemplate {
-  id          String   @id @default(cuid())
-  name        String
-  trade       String
-  type        String
-  description String?
-  surfaceMin  Float?
-  surfaceMax  Float?
-  budgetMin   Float?
-  budgetMax   Float?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  items ProjectTemplateItem[]
-}
-
-model ProjectTemplateItem {
+model SellerListing {
   id            String   @id @default(cuid())
-  templateId    String
-  template      ProjectTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  categoryId    String
-  category      ProjectCategory @relation(fields: [categoryId], references: [id])
-  
-  name          String
-  description   String?
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   quantity      Float
-  unit          String
-  estimatedPrice Float?
-  isRequired    Boolean  @default(true)
-  alternatives  String?
+  unitPrice     Float
+  description   String?
+  isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String
+  link      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Subscription {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentId       String?
+  agent         Agent?   @relation(fields: [agentId], references: [id])
+  stripeId      String?
+  plan          String
+  price         Float
+  status        String   @default("pending")
+  startDate     DateTime @default(now())
+  endDate       DateTime?
+  freeAgentId   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Workflow {
+  id            String   @id @default(cuid())
+  title         String
+  description   String?
+  assignedTo    String
+  assignedUser  User     @relation(fields: [assignedTo], references: [id], onDelete: Cascade)
+  agentId       String?
+  agent         Agent?   @relation(fields: [agentId], references: [id])
+  status        String   @default("PENDING_HUMAN")
+  priority      String   @default("medium")
+  dueDate       DateTime?
+  resolvedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  actions       WorkflowAction[]
+}
+
+model WorkflowAction {
+  id            String   @id @default(cuid())
+  workflowId    String
+  workflow      Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  action        String
+  comment       String?
+  createdAt     DateTime @default(now())
 }

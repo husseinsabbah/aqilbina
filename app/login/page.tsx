@@ -29,8 +29,22 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/dashboard");
+      // Récupérer la session pour connaître le rôle
+      const res = await fetch("/api/auth/session");
+      const session = await res.json();
+      const role = session?.user?.role;
+      const trade = session?.user?.trade;
+
+      // Rediriger selon le rôle
+      if (role === "vendeur" || trade === "vendeur") {
+        router.push("/vendeur");
+      } else if (role === "artisan" || trade === "artisan") {
+        router.push("/artisan");
+      } else {
+        router.push("/dashboard");
+      }
     } catch (err) {
+      console.error("Erreur:", err);
       setError("Une erreur est survenue");
       setLoading(false);
     }
@@ -39,7 +53,6 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-blue-950 to-blue-900 px-4">
       <div className="w-full max-w-md rounded-xl bg-white/10 p-8 backdrop-blur-sm shadow-2xl">
-        {/* Titre : on utilise un span au lieu de h1 pour éviter le doublon */}
         <div className="text-center">
           <span className="text-3xl font-bold text-white">🏗️ Aqil Bina</span>
           <p className="mt-2 text-sm text-blue-200">Connectez-vous à votre espace</p>
@@ -58,6 +71,7 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
               className="mt-1 w-full rounded-lg border border-blue-300/30 bg-white/10 px-4 py-3 text-white placeholder:text-blue-200/50 focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
+              suppressHydrationWarning
             />
           </div>
 
@@ -73,6 +87,7 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               className="mt-1 w-full rounded-lg border border-blue-300/30 bg-white/10 px-4 py-3 text-white placeholder:text-blue-200/50 focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
+              suppressHydrationWarning
             />
           </div>
 
@@ -86,6 +101,7 @@ export default function LoginPage() {
             type="submit"
             disabled={loading}
             className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            suppressHydrationWarning
           >
             {loading ? "Connexion en cours..." : "Se connecter"}
           </button>

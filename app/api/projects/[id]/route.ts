@@ -1,11 +1,10 @@
+// app/api/projects/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../../../../auth';
+import { authOptions } from '@/app/auth';
+import { prisma } from '@/lib/prisma';
 
-const prisma = new PrismaClient();
-
-// ========== GET : récupérer un projet spécifique ==========
+// ========== GET : récupérer un projet avec ses items ==========
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -20,9 +19,20 @@ export async function GET(
 
     const project = await prisma.project.findUnique({
       where: { id: projectId },
+      include: {
+        items: {
+          include: {
+            product: true,
+            service: true,
+          },
+        },
+      },
     });
 
-    if (!project || project.userId !== session.user.id) {
+    if (!project) {
+      return NextResponse.json({ error: 'Projet introuvable' }, { status: 404 });
+    }
+    if (project.userId !== session.user.id) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
     }
 
@@ -33,7 +43,7 @@ export async function GET(
   }
 }
 
-// ========== PUT : mettre à jour les notes de paiement ==========
+// ========== PUT : mettre à jour les notes de paiement (ou autres) ==========
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -46,7 +56,6 @@ export async function PUT(
 
     const { id: projectId } = await params;
 
-    // Vérifier que le projet existe et appartient à l'utilisateur
     const project = await prisma.project.findUnique({
       where: { id: projectId },
     });
@@ -58,7 +67,6 @@ export async function PUT(
     const body = await request.json();
     const { paymentNotes, attachmentUrl } = body;
 
-    // Mettre à jour le projet
     const updatedProject = await prisma.project.update({
       where: { id: projectId },
       data: {

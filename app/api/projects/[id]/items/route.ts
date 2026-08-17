@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../../../../../auth';
+import { authOptions } from '../../../../auth';
+import { prisma } from '@/lib/prisma'; // 👈 Utilisation de l'instance partagée
 
-const prisma = new PrismaClient();
-
+// ============================================================
+// GET : Récupérer tous les items d'un projet
+// ============================================================
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> } // 👈 params est une Promise
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -15,9 +16,8 @@ export async function GET(
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     }
 
-    const { id: projectId } = await params; // 👈 Résoudre params
+    const { id: projectId } = await params;
 
-    // Vérifier l'accès au projet
     const project = await prisma.project.findUnique({
       where: { id: projectId },
     });
@@ -32,6 +32,8 @@ export async function GET(
         quantity: true,
         unitPriceHtAtSale: true,
         tvaRate: true,
+        customLabel: true,
+        customPrice: true,
         product: {
           select: { name: true, salePrice: true },
         },
@@ -46,6 +48,8 @@ export async function GET(
       quantity: item.quantity,
       unitPriceHtAtSale: item.unitPriceHtAtSale,
       tvaRate: item.tvaRate,
+      customLabel: item.customLabel,
+      customPrice: item.customPrice,
       product: item.product || undefined,
       service: item.service || undefined,
     }));
@@ -57,6 +61,9 @@ export async function GET(
   }
 }
 
+// ============================================================
+// POST : Ajouter un item (produit, service ou personnalisé)
+// ============================================================
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -69,13 +76,10 @@ export async function POST(
 
     const { id: projectId } = await params;
     const body = await request.json();
-    const { productId, serviceId, quantity } = body;
+    const { productId, serviceId, quantity, customLabel, customPrice } = body;
 
     if (!quantity || quantity <= 0) {
       return NextResponse.json({ error: 'Quantité requise' }, { status: 400 });
-    }
-    if (!productId && !serviceId) {
-      return NextResponse.json({ error: 'Produit ou service requis' }, { status: 400 });
     }
 
     const project = await prisma.project.findUnique({
@@ -85,9 +89,42 @@ export async function POST(
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
     }
 
-    let unitPriceHtAtSale = 0;
-    let tvaRate = 0;
+    // Cas 1 : Produit personnalisé (sans catalogue)
+    if (customLabel && customPrice !== undefined) {
+      const item = await prisma.projectItem.create({
+        data: {
+          projectId,
+          quantity,
+          unitPriceHtAtSale: parseFloat(customPrice),
+          tvaRate: 20,
+          customLabel,
+          customPrice: parseFloat(customPrice),
+        },
+      });
+      return NextResponse.json(item, { status: 201 });
+    }
 
+    // Cas 2 : Service existant
+    if (serviceId) {
+      const service = await prisma.service.findUnique({
+        where: { id: serviceId },
+      });
+      if (!service) {
+        return NextResponse.json({ error: 'Service introuvable' }, { status: 404 });
+      }
+      const item = await prisma.projectItem.create({
+        data: {
+          projectId,
+          serviceId,
+          quantity,
+          unitPriceHtAtSale: service.unitPriceHt,
+          tvaRate: service.tvaRate || 20,
+        },
+      });
+      return NextResponse.json(item, { status: 201 });
+    }
+
+    // Cas 3 : Produit existant
     if (productId) {
       const product = await prisma.product.findUnique({
         where: { id: productId },
@@ -95,33 +132,28 @@ export async function POST(
       if (!product) {
         return NextResponse.json({ error: 'Produit introuvable' }, { status: 404 });
       }
-      unitPriceHtAtSale = product.salePrice / (1 + product.tvaRate / 100);
-      tvaRate = product.tvaRate;
-    } else if (serviceId) {
-      const service = await prisma.service.findUnique({
-        where: { id: serviceId },
+      const unitPriceHtAtSale = product.salePrice / (1 + product.tvaRate / 100);
+      const item = await prisma.projectItem.create({
+        data: {
+          projectId,
+          productId,
+          quantity,
+          unitPriceHtAtSale,
+          tvaRate: product.tvaRate,
+        },
       });
-      if (!service) {
-        return NextResponse.json({ error: 'Service introuvable' }, { status: 404 });
-      }
-      unitPriceHtAtSale = service.unitPriceHt;
-      tvaRate = service.tvaRate;
+      return NextResponse.json(item, { status: 201 });
     }
 
-    const item = await prisma.projectItem.create({
-      data: {
-        projectId,
-        productId: productId || null,
-        serviceId: serviceId || null,
-        quantity,
-        unitPriceHtAtSale,
-        tvaRate,
-      },
-    });
-
-    return NextResponse.json(item, { status: 201 });
+    return NextResponse.json(
+      { error: 'Produit, service ou produit personnalisé requis' },
+      { status: 400 }
+    );
   } catch (error) {
     console.error('POST /api/projects/[id]/items error:', error);
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Erreur serveur : ' + (error as Error).message },
+      { status: 500 }
+    );
   }
 }

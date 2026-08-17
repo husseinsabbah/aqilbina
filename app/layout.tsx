@@ -1,23 +1,29 @@
-"use client";
-
-import { SessionProvider } from "next-auth/react";
+// app/layout.tsx
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
+import Header from "@/components/Header";
+import Providers from "./providers";
+
+const inter = Inter({ subsets: ["latin"] });
+
+export const metadata: Metadata = {
+  title: "Aqil Bina",
+  description: "Plateforme de mise en relation artisans et vendeurs",
+};
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}) {
+}>) {
   return (
     <html lang="fr">
-      <head>
-        <title>Aqil Bina - Plateforme de rénovation</title>
-        <meta name="description" content="Gérez vos projets de construction et rénovation avec l'IA." />
-      </head>
-      <body>
-        <SessionProvider>
+      <body className={inter.className}>
+        <Providers>
+          <Header />
           <main>{children}</main>
-        </SessionProvider>
+        </Providers>
       </body>
     </html>
   );

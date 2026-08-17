@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../../../../auth';
+import { authOptions } from '../../../auth';
 
 // xlsx is installed at runtime, but may not include TS types in this project setup.
 const XLSX = require('xlsx');

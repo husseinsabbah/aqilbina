@@ -78,7 +78,7 @@ type DevisPDFProps = {
     name: string;
     quantity: number;
     price: number;
-    tvaRate: number;
+    tvaRate: number; // Taux de TVA appliqué (détecté)
     total: number;
   }[];
   totalHT: number;
@@ -94,12 +94,20 @@ export default function DevisPDF({
   totalTVA,
   totalTTC,
 }: DevisPDFProps) {
+  // Calcul du taux de TVA affiché (si des items existent, on prend le premier)
+  const displayTvaRate = items.length > 0 ? items[0].tvaRate : 20;
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
         {/* En-tête */}
         <Text style={styles.title}>📄 Devis</Text>
-        <Text style={styles.subtitle}>Projet : {projectName} - Statut : {projectStatus}</Text>
+        <Text style={styles.subtitle}>
+          Projet : {projectName} - Statut : {projectStatus}
+        </Text>
+        <Text style={[styles.subtitle, { marginTop: 4, fontSize: 10, color: '#6B7280' }]}>
+          TVA appliquée : {displayTvaRate}%
+        </Text>
 
         {/* Tableau */}
         <View style={styles.table}>
@@ -130,7 +138,7 @@ export default function DevisPDF({
           <Text style={styles.totalValue}>{totalHT.toFixed(2)} €</Text>
         </View>
         <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>TVA</Text>
+          <Text style={styles.totalLabel}>TVA ({displayTvaRate}%)</Text>
           <Text style={styles.totalValue}>{totalTVA.toFixed(2)} €</Text>
         </View>
         <View style={styles.totalRow}>
@@ -141,7 +149,9 @@ export default function DevisPDF({
         </View>
 
         {/* Pied de page */}
-        <Text style={styles.footer}>Devis généré par Aqil Bina - {new Date().toLocaleDateString()}</Text>
+        <Text style={styles.footer}>
+          Devis généré par Aqil Bina - {new Date().toLocaleDateString()}
+        </Text>
       </Page>
     </Document>
   );

@@ -45,8 +45,18 @@ export default function ProjetsPage() {
   };
 
   useEffect(() => {
+    if (!session) {
+      router.push('/auth/signin');
+      return;
+    }
+
+    if (session.user.role !== 'artisan' && session.user.trade !== 'artisan') {
+      router.push('/auth/signin');
+      return;
+    }
+
     fetchProjects();
-  }, []);
+  }, [session, router]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {

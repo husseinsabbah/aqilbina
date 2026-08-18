@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-// @ts-expect-error - xlsx is provided as a JS library without bundled TS declarations in this project
 import * as XLSX from 'xlsx';
 
 export async function GET() {

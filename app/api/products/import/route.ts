@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        await prisma.product.create({
+        await (prisma.product as any).create({
           data: {
             name,
             description: description || null,

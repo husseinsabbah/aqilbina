@@ -58,6 +58,7 @@ type Listing = {
   quantity: number;
   unitPrice: number;
   description: string | null;
+  endDate: string | null;
   isActive: boolean;
   createdAt: string;
   product: { name: string; brand: string | null; category: string; salePrice: number };
@@ -96,6 +97,21 @@ export default function VendeurPage() {
   const [loading, setLoading] = useState(true);
   const [section, setSection] = useState<SectionType>("dashboard");
   const [searchTerm, setSearchTerm] = useState("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sectionParam = params.get("section") as SectionType | null;
+    const catalogParam = params.get("catalog");
+
+    if (sectionParam && ["dashboard", "catalogue", "projets", "offres", "annonces", "ia"].includes(sectionParam)) {
+      setSection(sectionParam);
+    }
+
+    if (catalogParam) {
+      setSelectedCatalogId(catalogParam);
+      setSection("catalogue");
+    }
+  }, []);
   
   // Catalogues & filtre
   const [catalogs, setCatalogs] = useState<Catalog[]>([]);
@@ -109,6 +125,8 @@ export default function VendeurPage() {
   // États modale produit
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -138,10 +156,30 @@ export default function VendeurPage() {
   const [listingQuantity, setListingQuantity] = useState("");
   const [listingUnitPrice, setListingUnitPrice] = useState("");
   const [listingDescription, setListingDescription] = useState("");
+  const [listingEndDate, setListingEndDate] = useState("");
   const [sendingListing, setSendingListing] = useState(false);
 
+  const listingTotalPrice = (() => {
+    const quantity = Number(listingQuantity);
+    const unitPrice = Number(listingUnitPrice);
+
+    if (!Number.isFinite(quantity) || !Number.isFinite(unitPrice) || quantity <= 0 || unitPrice < 0) {
+      return 0;
+    }
+
+    return quantity * unitPrice;
+  })();
+
   // IA
-  const [aiSuggestions, setAiSuggestions] = useState<Array<Record<string, unknown>>>([]);
+  const [aiSuggestions, setAiSuggestions] = useState<Array<{
+    projectId: string;
+    projectName: string;
+    summary: string;
+    recommendedProducts: Array<Record<string, unknown>>;
+    recommendedTutorials: Array<Record<string, unknown>>;
+    questions: string[];
+    nextAction: string;
+  }>>([]);
   const [aiLoading, setAiLoading] = useState(false);
 
   // Import
@@ -281,13 +319,50 @@ export default function VendeurPage() {
   const fetchAISuggestions = async () => {
     setAiLoading(true);
     try {
-      const res = await fetch("/api/vendor/projects/ai-suggestions", { credentials: "include" });
-      if (res.ok) {
-        const data = await res.json();
-        setAiSuggestions(data.suggestions || []);
+      const projectPool = availableProjects.slice(0, 4);
+      if (projectPool.length === 0) {
+        setAiSuggestions([]);
+        return;
       }
+
+      const analyses = await Promise.all(
+        projectPool.map(async (project) => {
+          const res = await fetch('/api/agent/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ projectId: project.id }),
+          });
+
+          if (!res.ok) {
+            return null;
+          }
+
+          const data = await res.json();
+          return {
+            projectId: project.id,
+            projectName: project.name,
+            summary: typeof data.summary === 'string' ? data.summary : 'Analyse du projet en cours.',
+            recommendedProducts: Array.isArray(data.recommendedProducts) ? data.recommendedProducts : [],
+            recommendedTutorials: Array.isArray(data.recommendedTutorials) ? data.recommendedTutorials : [],
+            questions: Array.isArray(data.questions) ? data.questions : [],
+            nextAction: typeof data.nextAction === 'string' ? data.nextAction : 'Suivre la recommandation IA.',
+          };
+        })
+      );
+
+      setAiSuggestions(analyses.filter(Boolean) as Array<{
+        projectId: string;
+        projectName: string;
+        summary: string;
+        recommendedProducts: Array<Record<string, unknown>>;
+        recommendedTutorials: Array<Record<string, unknown>>;
+        questions: string[];
+        nextAction: string;
+      }>);
     } catch (error) {
-      console.error("AI suggestions error:", error);
+      console.error('AI suggestions error:', error);
+      setAiSuggestions([]);
     } finally {
       setAiLoading(false);
     }
@@ -331,14 +406,69 @@ export default function VendeurPage() {
     load();
   }, [session]);
 
+  const normalizeCatalogId = (catalogId: string | null | undefined) => {
+    if (typeof catalogId !== "string") return null;
+    const value = catalogId.trim();
+    return value ? value : null;
+  };
+
   const handleCatalogSelect = (catalogId: string | null) => {
-    setSelectedCatalogId(catalogId);
-    if (catalogId) {
+    const safeCatalogId = normalizeCatalogId(catalogId);
+    setSelectedCatalogId(safeCatalogId);
+    const params = new URLSearchParams(window.location.search);
+    params.set("section", "catalogue");
+
+    if (safeCatalogId) {
+      params.set("catalog", safeCatalogId);
       setSection("catalogue");
+    } else {
+      params.delete("catalog");
     }
+
+    window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
   };
 
   // ===== CRUD PRODUITS =====
+  const uploadProductImage = async (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      credentials: "include",
+      body: form,
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || "Erreur lors de l'upload de l'image");
+    }
+
+    return data.url as string | undefined;
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setUploadedImageUrl(null);
+      return;
+    }
+
+    try {
+      setUploadingImage(true);
+      const url = await uploadProductImage(file);
+      if (url) {
+        setUploadedImageUrl(url);
+      }
+    } catch (error) {
+      console.error("Erreur upload image produit:", error);
+      alert(error instanceof Error ? error.message : "Impossible d'importer cette image.");
+    } finally {
+      setUploadingImage(false);
+      e.target.value = "";
+    }
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     try {
@@ -346,8 +476,10 @@ export default function VendeurPage() {
         ? `/api/seller/products/${editingProduct.id}`
         : "/api/seller/products";
       const method = editingProduct ? "PUT" : "POST";
+      const resolvedImageUrl = uploadedImageUrl || formData.imageUrl.trim() || null;
       const payload = {
         ...formData,
+        imageUrl: resolvedImageUrl,
         purchasePrice: parseFloat(formData.purchasePrice),
         salePrice: parseFloat(formData.salePrice),
         stock: parseInt(formData.stock),
@@ -367,6 +499,7 @@ export default function VendeurPage() {
         await fetchCatalogs();
         refreshCatalogSidebar();
         setEditingProduct(null);
+        setUploadedImageUrl(null);
         setFormData({
           name: "",
           description: "",
@@ -438,6 +571,7 @@ export default function VendeurPage() {
 
   const openEditModal = (product: Product) => {
     setEditingProduct(product);
+    setUploadedImageUrl(null);
     setFormData({
       name: product.name,
       description: product.description || "",
@@ -457,8 +591,10 @@ export default function VendeurPage() {
   const handleImport = async (e: FormEvent) => {
     e.preventDefault();
     if (!importFile) return;
-    
-    let targetCatalogId = importCatalogId;
+
+    const resolvedCatalogId = importCatalogId || selectedCatalogId || "";
+    let targetCatalogId = resolvedCatalogId;
+
     if (importCatalogId === "new" && importNewCatalogName.trim()) {
       try {
         const res = await fetch("/api/seller/catalogs", {
@@ -474,6 +610,8 @@ export default function VendeurPage() {
         }
         const newCatalog = await res.json();
         targetCatalogId = newCatalog.id;
+        setSelectedCatalogId(newCatalog.id);
+        setImportCatalogId(newCatalog.id);
         await fetchCatalogs();
       } catch (error) {
         console.error("Erreur création catalogue:", error);
@@ -498,6 +636,14 @@ export default function VendeurPage() {
         body: formDataFile,
       });
       if (res.ok) {
+        const nextCatalogId = normalizeCatalogId(targetCatalogId) || normalizeCatalogId(selectedCatalogId) || null;
+        if (nextCatalogId) {
+          setSelectedCatalogId(nextCatalogId);
+          const params = new URLSearchParams(window.location.search);
+          params.set("section", "catalogue");
+          params.set("catalog", nextCatalogId);
+          window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+        }
         setShowImportModal(false);
         setImportFile(null);
         setImportCatalogId("");
@@ -617,7 +763,7 @@ export default function VendeurPage() {
   // ===== CRÉATION D'ANNONCE =====
   const handleCreateListing = async (e: FormEvent) => {
     e.preventDefault();
-    if (!listingProductId || !listingQuantity || !listingUnitPrice) return;
+    if (!listingProductId || !listingQuantity || !listingUnitPrice || !listingEndDate) return;
     setSendingListing(true);
     try {
       const payload = {
@@ -625,6 +771,7 @@ export default function VendeurPage() {
         quantity: parseInt(listingQuantity),
         unitPrice: parseFloat(listingUnitPrice),
         description: listingDescription,
+        endDate: listingEndDate,
       };
       const res = await fetch("/api/seller/listings", {
         method: "POST",
@@ -638,6 +785,7 @@ export default function VendeurPage() {
         setListingQuantity("");
         setListingUnitPrice("");
         setListingDescription("");
+        setListingEndDate("");
         await fetchListings();
       }
     } catch (error) {
@@ -649,15 +797,19 @@ export default function VendeurPage() {
 
   // ===== RENDU DES SECTIONS =====
   const renderSection = () => {
-    const filteredProducts = selectedCatalogId
-      ? products.filter(p => p.catalogId === selectedCatalogId)
+    const safeSelectedCatalogId = normalizeCatalogId(selectedCatalogId);
+    const activeCatalog = catalogs.find(c => c.id === safeSelectedCatalogId) ?? null;
+    const activeCatalogId = safeSelectedCatalogId ?? (catalogs.length === 1 ? catalogs[0].id : null);
+
+    const filteredProducts = activeCatalogId
+      ? products.filter(p => p.catalogId === activeCatalogId)
       : products;
 
     const getCatalogsWithProducts = () => {
-      if (selectedCatalogId) {
-        const catalog = catalogs.find(c => c.id === selectedCatalogId);
+      if (activeCatalogId) {
+        const catalog = catalogs.find(c => c.id === activeCatalogId) ?? activeCatalog;
         if (!catalog) return [];
-        const prods = products.filter(p => p.catalogId === selectedCatalogId);
+        const prods = products.filter(p => p.catalogId === activeCatalogId);
         return [{ catalog, products: prods }];
       }
       return catalogs
@@ -945,116 +1097,192 @@ export default function VendeurPage() {
         );
 
       case "catalogue":
-        return (
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-            <div className="flex justify-between items-center mb-4 flex-wrap gap-3">
-              <div className="flex items-center gap-3">
-                <h2 className="text-lg font-semibold text-gray-800">📋 Mon catalogue complet</h2>
-                {selectedCatalogId && (
+        if (activeCatalogId) {
+          return (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+              <div className="flex justify-between items-center mb-4 flex-wrap gap-3">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-lg font-semibold text-gray-800">
+                    {activeCatalog ? activeCatalog.name : "Catalogue"}
+                  </h2>
                   <button
-                    onClick={() => setSelectedCatalogId(null)}
+                    onClick={() => {
+                      setSelectedCatalogId(null);
+                      const params = new URLSearchParams(window.location.search);
+                      params.set("section", "catalogue");
+                      params.delete("catalog");
+                      window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+                    }}
                     className="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded-full hover:bg-blue-100 transition flex items-center gap-1"
                   >
                     <ArrowRight className="w-3 h-3 rotate-180" /> Retour à tous les catalogues
                   </button>
-                )}
-                {selectedCatalogId && (
                   <span className="text-xs text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-                    {catalogs.find(c => c.id === selectedCatalogId)?.name || "Catalogue"}
+                    {activeCatalog ? activeCatalog.name : "Catalogue"}
                   </span>
-                )}
-              </div>
+                </div>
 
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowImportModal(true)}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2 text-sm"
-                >
-                  <Upload className="w-4 h-4" /> Importer
-                </button>
-                <button
-                  onClick={() => {
-                    setEditingProduct(null);
-                    setFormData({
-                      name: "",
-                      description: "",
-                      category: "",
-                      brand: "",
-                      purchasePrice: "",
-                      salePrice: "",
-                      stock: "",
-                      tvaRate: "20",
-                      imageUrl: "",
-                      catalogId: selectedCatalogId || "",
-                    });
-                    setShowModal(true);
-                  }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2 text-sm"
-                >
-                  <Plus className="w-4 h-4" /> Ajouter un produit
-                </button>
-                {selectedCatalogId && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setImportCatalogId(activeCatalogId || selectedCatalogId || "");
+                      setImportNewCatalogName("");
+                      setShowImportModal(true);
+                    }}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2 text-sm"
+                  >
+                    <Upload className="w-4 h-4" /> Importer
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingProduct(null);
+                      setFormData({
+                        name: "",
+                        description: "",
+                        category: "",
+                        brand: "",
+                        purchasePrice: "",
+                        salePrice: "",
+                        stock: "",
+                        tvaRate: "20",
+                        imageUrl: "",
+                        catalogId: activeCatalogId || "",
+                      });
+                      setShowModal(true);
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2 text-sm"
+                  >
+                    <Plus className="w-4 h-4" /> Ajouter un produit
+                  </button>
                   <button
                     onClick={() => setShowClearCatalogModal(true)}
                     className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition flex items-center gap-2 text-sm"
                   >
                     <Trash2 className="w-4 h-4" /> Effacer tout
                   </button>
-                )}
-                <button
-                  onClick={() => router.push("/vendeur/catalogues/nouveau")}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2 text-sm"
-                >
-                  <Plus className="w-4 h-4" /> Nouveau catalogue
-                </button>
+                  <button
+                    onClick={() => router.push("/vendeur/catalogues/nouveau")}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2 text-sm"
+                  >
+                    <Plus className="w-4 h-4" /> Nouveau catalogue
+                  </button>
+                </div>
               </div>
-            </div>
 
-            {filteredProducts.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <Package className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                <p>Aucun produit dans {selectedCatalogId ? "ce catalogue" : "votre catalogue"}.</p>
-                <p className="text-sm">Ajoutez votre premier produit ou importez un fichier CSV.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {filteredProducts.map((p) => (
-                  <div key={p.id} className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition">
-                    <div className="flex justify-between items-start">
-                      <h3 className="font-medium text-gray-800 truncate">{p.name}</h3>
-                      <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">{p.category}</span>
+              {filteredProducts.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <Package className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                  <p>Aucun produit dans ce catalogue.</p>
+                  <p className="text-sm">Ajoutez votre premier produit ou importez un fichier CSV.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {filteredProducts.map((p) => (
+                    <div key={p.id} className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition">
+                      <div className="flex justify-between items-start">
+                        <h3 className="font-medium text-gray-800 truncate">{p.name}</h3>
+                        <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">{p.category}</span>
+                      </div>
+                      {p.brand && (
+                        <div className="text-xs text-gray-400 mt-0.5">Marque: {p.brand}</div>
+                      )}
+                      {p.imageUrl && (
+                        <img src={p.imageUrl} alt={p.name} className="w-full h-24 object-cover rounded-md my-2" />
+                      )}
+                      <p className="text-sm text-gray-500 line-clamp-2">{p.description || "Aucune description"}</p>
+                      <div className="mt-2 flex justify-between text-sm">
+                        <span className="font-bold text-blue-600">{p.salePrice} €</span>
+                        <span className={`${p.stock < 5 ? 'text-red-500' : 'text-gray-600'}`}>
+                          Stock: {p.stock}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          onClick={() => openEditModal(p)}
+                          className="flex-1 px-3 py-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 flex items-center justify-center gap-1 text-xs"
+                        >
+                          <Edit className="w-3 h-3" /> Modifier
+                        </button>
+                        <button
+                          onClick={() => deleteProduct(p.id)}
+                          className="flex-1 px-3 py-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100 flex items-center justify-center gap-1 text-xs"
+                        >
+                          <Trash2 className="w-3 h-3" /> Supprimer
+                        </button>
+                      </div>
                     </div>
-                    {p.brand && (
-                      <div className="text-xs text-gray-400 mt-0.5">Marque: {p.brand}</div>
-                    )}
-                    {p.imageUrl && (
-                      <img src={p.imageUrl} alt={p.name} className="w-full h-24 object-cover rounded-md my-2" />
-                    )}
-                    <p className="text-sm text-gray-500 line-clamp-2">{p.description || "Aucune description"}</p>
-                    <div className="mt-2 flex justify-between text-sm">
-                      <span className="font-bold text-blue-600">{p.salePrice} €</span>
-                      <span className={`${p.stock < 5 ? 'text-red-500' : 'text-gray-600'}`}>
-                        Stock: {p.stock}
-                      </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        if (catalogGroups.length === 0) {
+          return (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center text-gray-500">
+              <Package className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+              <p>Aucun catalogue disponible.</p>
+              <p className="text-sm mt-1">Créez votre premier catalogue pour commencer.</p>
+            </div>
+          );
+        }
+
+        return (
+          <div className="space-y-5">
+            {catalogGroups.map((group) => {
+              const previewProducts = [...group.products]
+                .sort(() => Math.random() - 0.5)
+                .slice(0, catalogGroups.length === 1 ? 8 : 4);
+
+              return (
+                <div key={group.catalog.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                  <div className="flex justify-between items-center mb-4 flex-wrap gap-3">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-800">{group.catalog.name}</h3>
+                      <p className="text-xs text-gray-500">{group.products.length} produit{group.products.length > 1 ? 's' : ''}</p>
                     </div>
-                    <div className="mt-3 flex gap-2">
-                      <button
-                        onClick={() => openEditModal(p)}
-                        className="flex-1 px-3 py-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 flex items-center justify-center gap-1 text-xs"
-                      >
-                        <Edit className="w-3 h-3" /> Modifier
-                      </button>
-                      <button
-                        onClick={() => deleteProduct(p.id)}
-                        className="flex-1 px-3 py-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100 flex items-center justify-center gap-1 text-xs"
-                      >
-                        <Trash2 className="w-3 h-3" /> Supprimer
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => {
+                        setSelectedCatalogId(group.catalog.id);
+                        const params = new URLSearchParams(window.location.search);
+                        params.set("section", "catalogue");
+                        params.set("catalog", group.catalog.id);
+                        window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+                      }}
+                      className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
+                    >
+                      Voir le catalogue
+                    </button>
                   </div>
-                ))}
-              </div>
-            )}
+
+                  {previewProducts.length === 0 ? (
+                    <div className="text-sm text-gray-500">Aucun produit dans ce catalogue.</div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                      {previewProducts.map((p) => (
+                        <div key={p.id} className="bg-gray-50 rounded-lg border border-gray-200 p-3">
+                          {p.imageUrl && (
+                            <img src={p.imageUrl} alt={p.name} className="w-full h-20 object-cover rounded-md mb-2" />
+                          )}
+                          <div className="flex justify-between items-start gap-2">
+                            <h4 className="font-medium text-gray-800 text-sm truncate">{p.name}</h4>
+                            <span className="text-[10px] px-2 py-1 rounded-full bg-gray-100 text-gray-600">{p.category}</span>
+                          </div>
+                          {p.brand && <div className="text-xs text-gray-400 mt-0.5">Marque: {p.brand}</div>}
+                          <div className="mt-2 flex justify-between text-sm">
+                            <span className="font-bold text-blue-600">{p.salePrice} €</span>
+                            <span className={`${p.stock < 5 ? 'text-red-500' : 'text-gray-600'}`}>
+                              Stock: {p.stock}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         );
 
@@ -1174,7 +1402,10 @@ export default function VendeurPage() {
                         {ann.isActive ? "Active" : "Inactive"}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600">Quantité: {ann.quantity} | Prix: {ann.unitPrice} €/u</p>
+                    <p className="text-sm text-gray-600">
+                      Quantité: {ann.quantity} | Prix unitaire: {ann.unitPrice} € | Prix total: {(ann.quantity * ann.unitPrice).toFixed(2)} €
+                    </p>
+                    {ann.endDate && <p className="text-sm text-gray-600">Fin de l’offre: {new Date(ann.endDate).toLocaleDateString()}</p>}
                     {ann.description && <p className="text-sm text-gray-500 mt-1">{ann.description}</p>}
                     <p className="text-xs text-gray-400 mt-1">Créée le {new Date(ann.createdAt).toLocaleDateString()}</p>
                   </div>
@@ -1187,37 +1418,85 @@ export default function VendeurPage() {
       case "ia":
         return (
           <div>
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">🤖 Assistant IA Vendeur</h2>
-            <button
-              onClick={fetchAISuggestions}
-              disabled={aiLoading}
-              className="mb-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
-            >
-              {aiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-              {aiLoading ? "Analyse en cours..." : "Analyser les opportunités"}
-            </button>
-            {aiSuggestions.length === 0 && !aiLoading && (
-              <p className="text-gray-500">Cliquez sur le bouton pour obtenir des recommandations IA.</p>
-            )}
-            {aiLoading && <p className="text-gray-500">Chargement des suggestions...</p>}
-            {!aiLoading && aiSuggestions.length > 0 && (
-              <div className="space-y-3">
-                {aiSuggestions.map((sugg, idx) => {
-                  const suggestion = sugg as Record<string, unknown>;
-                  const projectName = typeof suggestion.projectName === "string" ? suggestion.projectName : "Projet";
-                  const recommendation = typeof suggestion.recommendation === "string" ? suggestion.recommendation : "";
-                  const productName = typeof suggestion.productName === "string" ? suggestion.productName : "";
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <h2 className="text-lg font-semibold text-gray-800">🤖 Assistant IA Vendeur</h2>
+              <button
+                onClick={fetchAISuggestions}
+                disabled={aiLoading}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {aiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                {aiLoading ? "Analyse en cours..." : "Analyser les projets"}
+              </button>
+            </div>
 
-                  return (
-                    <div key={idx} className="bg-white border border-purple-200 rounded-lg p-4 shadow-sm">
-                      <h4 className="font-medium text-purple-800">{projectName}</h4>
-                      <p className="text-sm text-gray-700">{recommendation}</p>
-                      {productName && (
-                        <p className="text-xs text-gray-500">Produit suggéré: {productName}</p>
-                      )}
+            {aiSuggestions.length === 0 && !aiLoading && (
+              <div className="bg-white border border-purple-200 rounded-lg p-5 text-gray-600">
+                Cliquez sur le bouton pour analyser les projets disponibles et obtenir des recommandations IA à partir du catalogue du vendeur.
+              </div>
+            )}
+
+            {aiLoading && <p className="text-gray-500">Chargement des recommandations IA...</p>}
+
+            {!aiLoading && aiSuggestions.length > 0 && (
+              <div className="space-y-4">
+                {aiSuggestions.map((suggestion) => (
+                  <div key={suggestion.projectId} className="bg-white border border-purple-200 rounded-lg p-4 shadow-sm">
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <h4 className="font-semibold text-purple-800">{suggestion.projectName}</h4>
+                      <span className="text-[10px] uppercase tracking-wide bg-purple-100 text-purple-700 px-2 py-1 rounded-full">IA</span>
                     </div>
-                  );
-                })}
+
+                    <p className="text-sm text-gray-700 mb-3">{suggestion.summary}</p>
+
+                    {suggestion.recommendedProducts.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-xs font-semibold uppercase text-gray-500 mb-2">Produits recommandés</p>
+                        <div className="space-y-2">
+                          {suggestion.recommendedProducts.map((product, index) => (
+                            <div key={`${suggestion.projectId}-${index}`} className="rounded-md border border-gray-200 bg-gray-50 p-2">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-sm font-medium text-gray-800">{String(product.name || 'Produit')}</span>
+                                <span className="text-xs text-blue-700 font-medium">{Number(product.price || 0).toFixed(2)} €</span>
+                              </div>
+                              <p className="text-xs text-gray-500 mt-1">{String(product.justification || '')}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {suggestion.recommendedTutorials.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-xs font-semibold uppercase text-gray-500 mb-2">Tutoriels</p>
+                        <div className="space-y-2">
+                          {suggestion.recommendedTutorials.map((tutorial, index) => (
+                            <div key={`${suggestion.projectId}-tutorial-${index}`} className="rounded-md border border-gray-200 bg-white p-2">
+                              <p className="text-sm font-medium text-gray-800">{String(tutorial.title || 'Tutoriel')}</p>
+                              <p className="text-xs text-gray-500">{String(tutorial.description || '')}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {suggestion.questions.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-xs font-semibold uppercase text-gray-500 mb-2">Questions</p>
+                        <ul className="list-disc pl-4 text-sm text-gray-700 space-y-1">
+                          {suggestion.questions.map((question, index) => (
+                            <li key={`${suggestion.projectId}-question-${index}`}>{question}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    <div className="rounded-md bg-purple-50 border border-purple-200 p-2">
+                      <p className="text-xs font-semibold uppercase text-purple-700 mb-1">Action suivante</p>
+                      <p className="text-sm text-purple-800">{suggestion.nextAction}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -1465,13 +1744,42 @@ export default function VendeurPage() {
                   required
                 />
               </div>
-              <input
-                type="text"
-                placeholder="URL de l'image"
-                value={formData.imageUrl}
-                onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2"
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">URL de l'image</label>
+                <input
+                  type="text"
+                  placeholder="https://... ou /uploads/..."
+                  value={formData.imageUrl}
+                  onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ou importer une image</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 file:mr-3 file:rounded file:border-0 file:bg-blue-50 file:px-3 file:py-1.5 file:text-blue-700"
+                />
+                {uploadingImage && (
+                  <p className="text-xs text-blue-600 mt-1">Téléchargement de l'image en cours...</p>
+                )}
+                {(uploadedImageUrl || formData.imageUrl) && (
+                  <div className="mt-2 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 p-2">
+                    <img
+                      src={uploadedImageUrl || formData.imageUrl}
+                      alt="Aperçu produit"
+                      className="h-20 w-full object-cover rounded-md"
+                    />
+                    <p className="text-[10px] text-gray-500 mt-1">
+                      {uploadedImageUrl ? "Image importée (prioritaire)" : "Image URL utilisée"}
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <div className="flex gap-2 pt-2">
                 <button type="submit" className="flex-1 bg-blue-600 text-white rounded-lg px-4 py-2 hover:bg-blue-700">
                   {editingProduct ? "Modifier" : "Ajouter"}
@@ -1680,7 +1988,13 @@ export default function VendeurPage() {
             <form onSubmit={handleCreateListing} className="space-y-3">
               <select
                 value={listingProductId}
-                onChange={(e) => setListingProductId(e.target.value)}
+                onChange={(e) => {
+                  const selectedProduct = products.find((p) => p.id === e.target.value);
+                  setListingProductId(e.target.value);
+                  if (selectedProduct) {
+                    setListingUnitPrice(String(selectedProduct.salePrice));
+                  }
+                }}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2"
                 required
               >
@@ -1697,15 +2011,36 @@ export default function VendeurPage() {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2"
                 required
               />
-              <input
-                type="number"
-                placeholder="Prix unitaire"
-                value={listingUnitPrice}
-                onChange={(e) => setListingUnitPrice(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                step="0.01"
-                required
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Prix unitaire</label>
+                <input
+                  type="number"
+                  placeholder="Prix unitaire"
+                  value={listingUnitPrice}
+                  onChange={(e) => setListingUnitPrice(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  step="0.01"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Prix total</label>
+                <div className="w-full border border-gray-300 bg-gray-50 rounded-lg px-3 py-2 text-gray-800 font-semibold">
+                  {listingTotalPrice.toFixed(2)} €
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date de fin</label>
+                <input
+                  type="date"
+                  value={listingEndDate}
+                  onChange={(e) => setListingEndDate(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  required
+                />
+              </div>
               <textarea
                 placeholder="Description (optionnelle)"
                 value={listingDescription}

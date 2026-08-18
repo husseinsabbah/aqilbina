@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/auth';
+import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 export async function GET() {
@@ -14,14 +14,19 @@ export async function GET() {
       where: { isActive: true },
       include: {
         product: true,
-        vendor: {
+        user: {
           select: { companyName: true, name: true },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    return NextResponse.json(listings);
+    const formattedListings = listings.map((listing) => ({
+      ...listing,
+      vendor: listing.user,
+    }));
+
+    return NextResponse.json(formattedListings);
   } catch (error) {
     console.error('GET /api/artisan/listings error:', error);
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });

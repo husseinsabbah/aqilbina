@@ -1,7 +1,7 @@
 // app/api/vendor/projects/ai-suggestions/route.ts
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/auth';
+import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import OpenAI from 'openai';
 

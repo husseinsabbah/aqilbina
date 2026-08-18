@@ -45,8 +45,18 @@ export default function OffresPage() {
   };
 
   useEffect(() => {
+    if (!session) {
+      router.push('/auth/signin');
+      return;
+    }
+
+    if (session.user.role !== 'artisan' && session.user.trade !== 'artisan') {
+      router.push('/auth/signin');
+      return;
+    }
+
     fetchProposals();
-  }, []);
+  }, [session, router]);
 
   const handleAccept = async (proposalId: string) => {
     if (!confirm("Accepter cette offre ?")) return;

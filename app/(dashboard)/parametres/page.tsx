@@ -84,6 +84,30 @@ export default function ParametresPage() {
   const [userAgentsLoading, setUserAgentsLoading] = useState(false);
   const [cancellingAgentId, setCancellingAgentId] = useState<string | null>(null);
 
+  const [assistantConfigs, setAssistantConfigs] = useState<Array<{
+    id: string;
+    name: string;
+    role: string;
+    tone: string;
+    systemPrompt: string;
+    rules: string;
+    isActive: boolean;
+    agentId: string;
+    agent?: { name?: string | null; type?: string | null };
+  }>>([]);
+  const [showAssistantConfigModal, setShowAssistantConfigModal] = useState(false);
+  const [editingAssistantConfig, setEditingAssistantConfig] = useState<any | null>(null);
+  const [assistantConfigForm, setAssistantConfigForm] = useState({
+    agentId: "",
+    name: "",
+    role: "Assistant vendeur expert",
+    tone: "professionnel, utile, précis",
+    systemPrompt: "Tu es un assistant expert pour aider un vendeur à recommander des produits. Tu restes dans le contexte du projet et tu n'inventes jamais d'informations.",
+    rules: "Tu ne proposes que des produits présents dans le catalogue. Tu n'inventes ni prix, ni stock, ni délai. Si une information manque, demande un détail court. Réponds en français et de manière claire.",
+    isActive: true,
+  });
+  const [assistantConfigLoading, setAssistantConfigLoading] = useState(false);
+
   const [formData, setFormData] = useState({
     companyName: "",
     brandColor: "#1E40AF",
@@ -101,6 +125,12 @@ export default function ParametresPage() {
   });
 
   const isVendeur = formData.trade === "vendeur";
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [passwordLoading, setPasswordLoading] = useState(false);
 
   // Redirection si non authentifié
   useEffect(() => {
@@ -150,6 +180,18 @@ export default function ParametresPage() {
     }
   };
 
+  const fetchAssistantConfigs = async () => {
+    try {
+      const res = await fetch('/api/admin/assistant-config', { credentials: 'include' });
+      if (!res.ok) throw new Error('Erreur chargement config IA');
+      const data = await res.json();
+      setAssistantConfigs(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Erreur chargement config IA :', error);
+      setAssistantConfigs([]);
+    }
+  };
+
   useEffect(() => {
     if (!session?.user?.id) return;
 
@@ -189,6 +231,16 @@ export default function ParametresPage() {
         setUserAgents(userAgentsData);
       } catch (err) {
         console.error("Erreur chargement agents :", err);
+      }
+
+      try {
+        const assistantConfigsRes = await fetch('/api/admin/assistant-config', { credentials: 'include' });
+        if (assistantConfigsRes.ok) {
+          const assistantConfigsData = await assistantConfigsRes.json();
+          setAssistantConfigs(Array.isArray(assistantConfigsData) ? assistantConfigsData : []);
+        }
+      } catch (err) {
+        console.error('Erreur chargement configs IA :', err);
       }
     };
 
@@ -234,6 +286,39 @@ export default function ParametresPage() {
       alert('Erreur : ' + (error as Error).message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passwordForm.newPassword.length < 8) {
+      alert('Le mot de passe doit contenir au moins 8 caractères.');
+      return;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      alert('La confirmation du mot de passe ne correspond pas.');
+      return;
+    }
+
+    setPasswordLoading(true);
+    try {
+      const res = await fetch('/api/user/password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          currentPassword: passwordForm.currentPassword,
+          newPassword: passwordForm.newPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erreur lors du changement de mot de passe');
+      alert('✅ Mot de passe mis à jour avec succès.');
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (error) {
+      alert('Erreur : ' + (error as Error).message);
+    } finally {
+      setPasswordLoading(false);
     }
   };
 
@@ -486,6 +571,140 @@ export default function ParametresPage() {
       serviceCategory: "",
     });
     setShowServiceModal(true);
+  };
+
+  const openCreateAssistantConfig = () => {
+    const activeAgent = userAgents.find((ua) => ua.status === 'TRIAL' || ua.status === 'ACTIVE') || userAgents[0];
+    setEditingAssistantConfig(null);
+    setAssistantConfigForm({
+      agentId: activeAgent?.agentId || "",
+      name: activeAgent?.customName || activeAgent?.agent?.name || "Assistant",
+      role: "Assistant vendeur expert",
+      tone: "professionnel, utile, précis",
+      systemPrompt: "Tu es un assistant expert pour aider un vendeur à recommander des produits. Tu restes dans le contexte du projet et tu n'inventes jamais d'informations.",
+      rules: "Tu ne proposes que des produits présents dans le catalogue. Tu n'inventes ni prix, ni stock, ni délai. Si une information manque, demande un détail court. Réponds en français et de manière claire.",
+      isActive: true,
+    });
+    setShowAssistantConfigModal(true);
+  };
+
+  const openEditAssistantConfig = (config: any) => {
+    setEditingAssistantConfig(config);
+    setAssistantConfigForm({
+      agentId: config.agentId,
+      name: config.name,
+      role: config.role,
+      tone: config.tone,
+      systemPrompt: config.systemPrompt,
+      rules: config.rules,
+      isActive: !!config.isActive,
+    });
+    setShowAssistantConfigModal(true);
+  };
+
+  const handleAssistantConfigSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!assistantConfigForm.agentId) {
+      alert('Veuillez sélectionner un agent pour cette configuration.');
+      return;
+    }
+
+    setAssistantConfigLoading(true);
+    try {
+      const payload = {
+        agentId: assistantConfigForm.agentId,
+        name: assistantConfigForm.name.trim(),
+        role: assistantConfigForm.role.trim(),
+        tone: assistantConfigForm.tone.trim(),
+        systemPrompt: assistantConfigForm.systemPrompt.trim(),
+        rules: assistantConfigForm.rules.trim(),
+        isActive: assistantConfigForm.isActive,
+      };
+
+      const url = editingAssistantConfig
+        ? `/api/admin/assistant-config/${editingAssistantConfig.id}`
+        : '/api/admin/assistant-config';
+      const method = editingAssistantConfig ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Erreur');
+      }
+
+      if (assistantConfigForm.isActive) {
+        const sameAgentConfigs = assistantConfigs.filter((cfg) => cfg.agentId === assistantConfigForm.agentId && cfg.id !== editingAssistantConfig?.id);
+        await Promise.all(
+          sameAgentConfigs.map((cfg) =>
+            fetch(`/api/admin/assistant-config/${cfg.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ isActive: false }),
+            })
+          )
+        );
+      }
+
+      await fetchAssistantConfigs();
+      setShowAssistantConfigModal(false);
+      setEditingAssistantConfig(null);
+      setAssistantConfigForm({
+        agentId: assistantConfigForm.agentId,
+        name: '',
+        role: 'Assistant vendeur expert',
+        tone: 'professionnel, utile, précis',
+        systemPrompt: "Tu es un assistant expert pour aider un vendeur à recommander des produits. Tu restes dans le contexte du projet et tu n'inventes jamais d'informations.",
+        rules: "Tu ne proposes que des produits présents dans le catalogue. Tu n'inventes ni prix, ni stock, ni délai. Si une information manque, demande un détail court. Réponds en français et de manière claire.",
+        isActive: true,
+      });
+      alert(editingAssistantConfig ? '✅ Configuration IA mise à jour !' : '✅ Configuration IA créée !');
+    } catch (error) {
+      alert('Erreur : ' + (error as Error).message);
+    } finally {
+      setAssistantConfigLoading(false);
+    }
+  };
+
+  const toggleAssistantConfigActive = async (config: any) => {
+    try {
+      const res = await fetch(`/api/admin/assistant-config/${config.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ isActive: !config.isActive }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Erreur');
+      }
+
+      if (!config.isActive) {
+        const sameAgentConfigs = assistantConfigs.filter((cfg) => cfg.agentId === config.agentId && cfg.id !== config.id);
+        await Promise.all(
+          sameAgentConfigs.map((cfg) =>
+            fetch(`/api/admin/assistant-config/${cfg.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ isActive: false }),
+            })
+          )
+        );
+      }
+
+      await fetchAssistantConfigs();
+    } catch (error) {
+      alert('Erreur : ' + (error as Error).message);
+    }
   };
 
   if (sessionStatus === "loading") {
@@ -797,6 +1016,73 @@ export default function ParametresPage() {
         </div>
       )}
 
+      {/* Assistant IA */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-purple-600" />
+            🧠 Assistant IA
+          </h2>
+          <button
+            onClick={openCreateAssistantConfig}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center gap-2 text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Nouvelle config
+          </button>
+        </div>
+
+        {assistantConfigs.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <Sparkles className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+            <p>Aucune configuration d’assistant créée.</p>
+            <p className="text-sm">Créez une configuration pour définir le comportement de l’IA et l’activer par défaut.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {assistantConfigs.map((config) => (
+              <div key={config.id} className={`rounded-2xl border p-4 ${config.isActive ? 'border-purple-200 bg-purple-50' : 'border-gray-200 bg-gray-50'}`}>
+                <div className="flex justify-between items-start gap-3 mb-3">
+                  <div>
+                    <h3 className="font-semibold text-gray-800">{config.name}</h3>
+                    <p className="text-xs text-gray-500">{config.agent?.name || 'Agent'} • {config.role}</p>
+                  </div>
+                  <span className={`px-2 py-1 rounded-full text-[10px] font-medium ${config.isActive ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
+                    {config.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+
+                <div className="space-y-2 text-sm text-gray-700">
+                  <div>
+                    <span className="text-gray-500 block text-[10px] uppercase tracking-wide">Ton</span>
+                    <span>{config.tone}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500 block text-[10px] uppercase tracking-wide">Prompt système</span>
+                    <span className="line-clamp-3">{config.systemPrompt}</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={() => openEditAssistantConfig(config)}
+                    className="flex-1 px-3 py-2 text-sm bg-white border border-purple-200 text-purple-700 rounded-lg hover:bg-purple-50"
+                  >
+                    Modifier
+                  </button>
+                  <button
+                    onClick={() => toggleAssistantConfigActive(config)}
+                    className="flex-1 px-3 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                  >
+                    {config.isActive ? 'Désactiver' : 'Activer'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Mes prestations */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
         <div className="flex justify-between items-center mb-4">
@@ -986,6 +1272,119 @@ export default function ParametresPage() {
                 className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition"
               >
                 {editingService ? 'Mettre à jour' : 'Ajouter'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODALE CONFIGURATION ASSISTANT */}
+      {showAssistantConfigModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl w-full max-w-2xl p-6 relative max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => {
+                setShowAssistantConfigModal(false);
+                setEditingAssistantConfig(null);
+              }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <h2 className="text-xl font-bold mb-4">
+              {editingAssistantConfig ? 'Modifier la configuration' : 'Créer une configuration IA'}
+            </h2>
+
+            <form onSubmit={handleAssistantConfigSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Agent *</label>
+                <select
+                  value={assistantConfigForm.agentId}
+                  onChange={(e) => setAssistantConfigForm({ ...assistantConfigForm, agentId: e.target.value })}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                  required
+                >
+                  <option value="">Sélectionner un agent</option>
+                  {userAgents.map((ua) => (
+                    <option key={ua.id} value={ua.agentId}>
+                      {(ua.customName || ua.agent?.name || 'Agent')} ({ua.agent?.type || 'vendeur'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Nom de la configuration *</label>
+                <input
+                  type="text"
+                  value={assistantConfigForm.name}
+                  onChange={(e) => setAssistantConfigForm({ ...assistantConfigForm, name: e.target.value })}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Rôle *</label>
+                <input
+                  type="text"
+                  value={assistantConfigForm.role}
+                  onChange={(e) => setAssistantConfigForm({ ...assistantConfigForm, role: e.target.value })}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Ton *</label>
+                <input
+                  type="text"
+                  value={assistantConfigForm.tone}
+                  onChange={(e) => setAssistantConfigForm({ ...assistantConfigForm, tone: e.target.value })}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Prompt système *</label>
+                <textarea
+                  value={assistantConfigForm.systemPrompt}
+                  onChange={(e) => setAssistantConfigForm({ ...assistantConfigForm, systemPrompt: e.target.value })}
+                  rows={4}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Règles métier *</label>
+                <textarea
+                  value={assistantConfigForm.rules}
+                  onChange={(e) => setAssistantConfigForm({ ...assistantConfigForm, rules: e.target.value })}
+                  rows={4}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
+                  required
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={assistantConfigForm.isActive}
+                  onChange={(e) => setAssistantConfigForm({ ...assistantConfigForm, isActive: e.target.checked })}
+                  id="assistant-config-active"
+                />
+                <label htmlFor="assistant-config-active" className="text-sm text-gray-700">Activer cette configuration</label>
+              </div>
+
+              <button
+                type="submit"
+                disabled={assistantConfigLoading}
+                className="w-full bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 transition disabled:opacity-50"
+              >
+                {assistantConfigLoading ? 'Enregistrement...' : editingAssistantConfig ? 'Mettre à jour' : 'Créer'}
               </button>
             </form>
           </div>

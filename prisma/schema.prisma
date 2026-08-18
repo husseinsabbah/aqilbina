@@ -37,6 +37,14 @@ model User {
   workflows     Workflow[]
   workflowActions WorkflowAction[]
   catalogs      Catalog[]
+
+  assistantConfigs AssistantConfig[]
+  assistantLogs    AssistantLog[]
+  chatMessages     ChatMessage[]
+  userTutorials    UserTutorial[]
+
+  adminActions     AdminAuditLog[] @relation("AdminAuditAsAdmin")
+  targetActions    AdminAuditLog[] @relation("AdminAuditAsTarget")
 }
 
 model Agent {
@@ -54,6 +62,10 @@ model Agent {
   userAgents  UserAgent[]
   subscriptions Subscription[] // relation inverse
   workflows   Workflow[]       // relation inverse
+
+  assistantConfigs AssistantConfig[]
+  assistantLogs    AssistantLog[]
+  chatMessages     ChatMessage[]
 }
 
 model UserAgent {
@@ -160,6 +172,8 @@ model Project {
 
   items           ProjectItem[]
   vendorProposals VendorProposal[]
+  chatMessages    ChatMessage[]
+  userTutorials   UserTutorial[]
 }
 
 model ProjectItem {
@@ -198,17 +212,145 @@ model VendorProposal {
 }
 
 model SellerListing {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   productId     String
-  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product       Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
   userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   quantity      Float
   unitPrice     Float
   description   String?
-  isActive      Boolean  @default(true)
+  endDate       DateTime?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model AssistantConfig {
+  id          String   @id @default(cuid())
+  agentId     String
+  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  role        String
+  tone        String
+  systemPrompt String
+  rules       String
+  isActive    Boolean @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  versions    AssistantConfigVersion[]
+}
+
+model AssistantConfigVersion {
+  id            String   @id @default(cuid())
+  configId      String
+  config        AssistantConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  version       Int
+  systemPrompt  String
+  role          String
+  tone          String
+  rules         String
+  status        String
+  testedAt      DateTime?
+  createdBy     String
   createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+}
+
+model AdminAuditLog {
+  id            String   @id @default(cuid())
+  adminUserId   String
+  adminUser     User     @relation("AdminAuditAsAdmin", fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  targetUserId  String?
+  targetUser    User?    @relation("AdminAuditAsTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  action        String
+  details       String?
+  metadata      String?
+  createdAt     DateTime @default(now())
+}
+
+model ChatMessage {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  agentId     String?
+  agent       Agent?   @relation(fields: [agentId], references: [id], onDelete: SetNull)
+
+  role        String
+  content     String
+  context     String?
+  metadata    String?
+  createdAt   DateTime @default(now())
+}
+
+model AssistantLog {
+  id          String   @id @default(cuid())
+  agentId     String
+  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  projectId   String?
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  action      String
+  prompt      String?
+  response    String?
+  durationMs  Int
+  tokensUsed  Int?
+  error       String?
+  status      String
+  createdAt   DateTime @default(now())
+}
+
+model Tutorial {
+  id          String   @id @default(cuid())
+  title       String
+  type        String
+  content     String?
+  url         String?
+  thumbnail   String?
+  description String?
+  keywords    String
+  tags        String?
+  projectType String?
+  difficulty  String?
+  trade       String?
+  source      String?
+  sourceId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userTutorials UserTutorial[]
+}
+
+model UserTutorial {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tutorialId  String
+  tutorial    Tutorial @relation(fields: [tutorialId], references: [id], onDelete: Cascade)
+
+  projectId   String?
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  savedAt     DateTime @default(now())
+  sharedAt    DateTime?
+  sharedWith  String?
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, tutorialId])
 }
 
 model Notification {

@@ -36,17 +36,18 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      user = await prisma.user.create({
+      user = await (prisma.user as any).create({
         data: {
           id: 'user_placeholder',
           email: 'hassan@aqilbina.com',
           name: 'Hassan',
           companyName: 'Ma société',
+          password: 'placeholder',
         },
       });
     }
 
-    const newProduct = await prisma.product.create({
+    const newProduct = await (prisma.product as any).create({
       data: {
         name,
         description: body.description || null,

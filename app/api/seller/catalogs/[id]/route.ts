@@ -6,7 +6,7 @@ import { prisma } from '@/lib/prisma';
 // GET : récupérer un catalogue spécifique
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -14,9 +14,11 @@ export async function GET(
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     }
 
+    const { id } = await params;
+
     const catalog = await prisma.catalog.findFirst({
       where: {
-        id: params.id,
+        id,
         userId: session.user.id,
       },
       include: {
@@ -38,7 +40,7 @@ export async function GET(
 // PUT : modifier un catalogue
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -46,7 +48,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     }
 
-    const catalogId = params.id;
+    const { id: catalogId } = await params;
     const body = await request.json();
     const { name, description } = body;
 
@@ -98,7 +100,7 @@ export async function PUT(
 // DELETE : supprimer un catalogue
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -106,7 +108,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     }
 
-    const catalogId = params.id;
+    const { id: catalogId } = await params;
 
     // Vérifier que le catalogue appartient au vendeur
     const catalog = await prisma.catalog.findFirst({

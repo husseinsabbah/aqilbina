@@ -1,7 +1,7 @@
 // app/api/projects/[id]/proposals/route.ts
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/auth';
+import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(
@@ -15,6 +15,11 @@ export async function GET(
     }
 
     const { id: projectId } = await params;
+
+    const isArtisan = session.user.role === 'artisan' || session.user.trade === 'artisan';
+    if (!isArtisan) {
+      return NextResponse.json({ error: 'Accès réservé aux artisans' }, { status: 403 });
+    }
 
     // Vérifier que le projet appartient à l'artisan
     const project = await prisma.project.findUnique({

@@ -32,26 +32,25 @@ export async function GET(
         quantity: true,
         unitPriceHtAtSale: true,
         tvaRate: true,
-        customLabel: true,
-        customPrice: true,
-        product: {
-          select: { name: true, salePrice: true },
-        },
-        service: {
-          select: { name: true, unitPriceHt: true },
-        },
+        productId: true,
+        serviceId: true,
       },
     });
 
-    const formattedItems = items.map((item) => ({
-      id: item.id,
-      quantity: item.quantity,
-      unitPriceHtAtSale: item.unitPriceHtAtSale,
-      tvaRate: item.tvaRate,
-      customLabel: item.customLabel,
-      customPrice: item.customPrice,
-      product: item.product || undefined,
-      service: item.service || undefined,
+    const formattedItems = await Promise.all(items.map(async (item) => {
+      const rawItem = item as any;
+      const product = rawItem.productId ? await prisma.product.findUnique({ where: { id: rawItem.productId }, select: { name: true, salePrice: true } }) : null;
+      const service = rawItem.serviceId ? await prisma.service.findUnique({ where: { id: rawItem.serviceId }, select: { name: true, unitPrice: true } }) : null;
+      return {
+        id: rawItem.id,
+        quantity: rawItem.quantity,
+        unitPriceHtAtSale: rawItem.unitPriceHtAtSale,
+        tvaRate: rawItem.tvaRate,
+        customLabel: (rawItem as any).customLabel ?? null,
+        customPrice: (rawItem as any).customPrice ?? null,
+        product: product || undefined,
+        service: service ? { ...service, unitPriceHt: service.unitPrice } : undefined,
+      };
     }));
 
     return NextResponse.json(formattedItems);
@@ -91,7 +90,7 @@ export async function POST(
 
     // Cas 1 : Produit personnalisé (sans catalogue)
     if (customLabel && customPrice !== undefined) {
-      const item = await prisma.projectItem.create({
+      const item = await (prisma.projectItem as any).create({
         data: {
           projectId,
           quantity,
@@ -112,13 +111,13 @@ export async function POST(
       if (!service) {
         return NextResponse.json({ error: 'Service introuvable' }, { status: 404 });
       }
-      const item = await prisma.projectItem.create({
+      const item = await (prisma.projectItem as any).create({
         data: {
           projectId,
           serviceId,
           quantity,
-          unitPriceHtAtSale: service.unitPriceHt,
-          tvaRate: service.tvaRate || 20,
+          unitPriceHtAtSale: service.unitPrice ?? service.unitPrice,
+          tvaRate: 20,
         },
       });
       return NextResponse.json(item, { status: 201 });
@@ -133,13 +132,13 @@ export async function POST(
         return NextResponse.json({ error: 'Produit introuvable' }, { status: 404 });
       }
       const unitPriceHtAtSale = product.salePrice / (1 + product.tvaRate / 100);
-      const item = await prisma.projectItem.create({
+      const item = await (prisma.projectItem as any).create({
         data: {
           projectId,
           productId,
           quantity,
           unitPriceHtAtSale,
-          tvaRate: product.tvaRate,
+          tvaRate: product.tvaRate || 20,
         },
       });
       return NextResponse.json(item, { status: 201 });

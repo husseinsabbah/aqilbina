@@ -1,7 +1,7 @@
 // app/api/artisan/proposals/route.ts
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/auth';
+import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 export async function GET() {
@@ -9,6 +9,11 @@ export async function GET() {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    }
+
+    const isArtisan = session.user.role === 'artisan' || session.user.trade === 'artisan';
+    if (!isArtisan) {
+      return NextResponse.json({ error: 'Accès réservé aux artisans' }, { status: 403 });
     }
 
     // Récupérer tous les projets de l'artisan

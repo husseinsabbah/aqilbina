@@ -11,6 +11,7 @@ import {
   Settings,
   LogOut,
   Store,
+  Shield,
 } from "lucide-react";
 
 export default function DashboardLayout({
@@ -47,6 +48,9 @@ export default function DashboardLayout({
     { name: "Projets artisans", href: "/vendeur/projets", icon: FolderKanban },
     { name: "Vendeur", href: "/vendeur", icon: Store },
     { name: "Paramètres", href: "/parametres", icon: Settings },
+    ...(session.user.role === 'admin'
+      ? [{ name: "Admin", href: "/admin", icon: Shield }]
+      : []),
   ];
 
   return (

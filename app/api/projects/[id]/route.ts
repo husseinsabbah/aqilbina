@@ -1,7 +1,7 @@
 // app/api/projects/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/auth';
+import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 // ========== GET : récupérer un projet avec ses items ==========
@@ -13,6 +13,11 @@ export async function GET(
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    }
+
+    const isArtisan = session.user.role === 'artisan' || session.user.trade === 'artisan';
+    if (!isArtisan) {
+      return NextResponse.json({ error: 'Accès réservé aux artisans' }, { status: 403 });
     }
 
     const { id: projectId } = await params;
@@ -55,6 +60,11 @@ export async function PUT(
     }
 
     const { id: projectId } = await params;
+
+    const isArtisan = session.user.role === 'artisan' || session.user.trade === 'artisan';
+    if (!isArtisan) {
+      return NextResponse.json({ error: 'Accès réservé aux artisans' }, { status: 403 });
+    }
 
     const project = await prisma.project.findUnique({
       where: { id: projectId },

@@ -137,12 +137,12 @@ export default function Sidebar({
       ];
     } else if (currentAgent.type === "vendeur") {
       return [
-        { label: "Dashboard", section: "dashboard", icon: LayoutDashboard },
-        { label: "Catalogue", section: "catalogue", icon: Package },
-        { label: "Projets disponibles", section: "projets", icon: Eye },
-        { label: "Offres envoyées", section: "offres", icon: Send },
-        { label: "Annonces", section: "annonces", icon: Store },
-        { label: "Assistant IA", section: "ia", icon: Sparkles },
+        { label: "Dashboard", section: "dashboard", icon: LayoutDashboard, href: "/vendeur?section=dashboard" },
+        { label: "Catalogue", section: "catalogue", icon: Package, href: "/vendeur?section=catalogue" },
+        { label: "Projets disponibles", section: "projets", icon: Eye, href: "/vendeur/projets" },
+        { label: "Offres envoyées", section: "offres", icon: Send, href: "/vendeur?section=offres" },
+        { label: "Annonces", section: "annonces", icon: Store, href: "/vendeur?section=annonces" },
+        { label: "Assistant IA", section: "ia", icon: Sparkles, href: "/vendeur?section=ia" },
       ];
     }
     return [];
@@ -156,10 +156,22 @@ export default function Sidebar({
     if (item.section === "dashboard") {
       if (onCatalogSelect) onCatalogSelect(null);
     }
+
+    if (item.href) {
+      const targetUrl = item.href.startsWith("/vendeur") && item.section
+        ? `/vendeur?section=${encodeURIComponent(item.section)}`
+        : item.href;
+
+      if (pathname === "/vendeur" && onSectionChange) {
+        onSectionChange(item.section);
+      }
+
+      router.push(targetUrl);
+      return;
+    }
+
     if (onSectionChange && pathname.startsWith("/vendeur")) {
       onSectionChange(item.section);
-    } else if (item.href) {
-      router.push(item.href);
     }
   };
 
@@ -170,6 +182,16 @@ export default function Sidebar({
     if (onSectionChange) {
       onSectionChange("catalogue");
     }
+
+    const params = new URLSearchParams(window.location.search);
+    params.set("section", "catalogue");
+    params.set("catalog", catalogId);
+    window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+
+    if (pathname !== "/vendeur") {
+      router.push(`/vendeur?${params.toString()}`);
+    }
+
     setCatalogMenuOpen(true);
     setDropdownOpen(false);
   };

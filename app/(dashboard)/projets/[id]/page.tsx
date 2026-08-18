@@ -93,6 +93,9 @@ export default function ProjetEditorPage() {
   const [proposalsLoading, setProposalsLoading] = useState(false);
   const [listings, setListings] = useState<Listing[]>([]);
   const [listingsLoading, setListingsLoading] = useState(false);
+  const [chatMessages, setChatMessages] = useState<Array<{ id: string; role: 'user' | 'assistant'; content: string; createdAt: string }>>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
 
   // ===== TVA =====
   const [tvaRate, setTvaRate] = useState<number>(20);
@@ -200,6 +203,71 @@ export default function ProjetEditorPage() {
     }
   };
 
+  const fetchChatMessages = async () => {
+    try {
+      const res = await fetch(`/api/agent/conversation?projectId=${projectId}`, { credentials: 'include' });
+      if (!res.ok) {
+        setChatMessages([]);
+        return;
+      }
+      const data = await res.json();
+      setChatMessages(data.messages || []);
+    } catch (error) {
+      console.error('Erreur chargement conversation IA :', error);
+      setChatMessages([]);
+    }
+  };
+
+  const handleAskAssistant = async () => {
+    const trimmed = chatInput.trim();
+    if (!trimmed || chatLoading) return;
+
+    setChatLoading(true);
+    const userMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user' as const,
+      content: trimmed,
+      createdAt: new Date().toISOString(),
+    };
+
+    setChatMessages((prev) => [...prev, userMessage]);
+    setChatInput('');
+
+    try {
+      const res = await fetch('/api/agent/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ projectId, message: trimmed }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Erreur IA');
+      }
+
+      const assistantMessage = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant' as const,
+        content: data.answer || 'Aucune réponse disponible.',
+        createdAt: new Date().toISOString(),
+      };
+
+      setChatMessages((prev) => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error('Erreur envoi message IA :', error);
+      setChatMessages((prev) => [...prev, {
+        id: `assistant-error-${Date.now()}`,
+        role: 'assistant',
+        content: 'Impossible de répondre pour le moment. Merci de réessayer.',
+        createdAt: new Date().toISOString(),
+      }]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
   // ========== DÉTECTION TVA ==========
   useEffect(() => {
     const detectCountryAndVAT = async () => {
@@ -238,6 +306,7 @@ export default function ProjetEditorPage() {
       await fetchServices();
       await fetchProposals();
       await fetchListings();
+      await fetchChatMessages();
       setLoading(false);
     };
     load();
@@ -563,6 +632,52 @@ export default function ProjetEditorPage() {
 
             {/* ===== SUGGESTIONS IA ===== */}
             <SuggestionsIA projectId={projectId} onAddItem={addItem} existingItems={items} />
+
+            <div className="mt-5 border-t border-blue-200 pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold text-blue-800">💬 Assistant projet</p>
+              </div>
+
+              <div className="space-y-2 max-h-64 overflow-y-auto bg-white border border-blue-100 rounded-lg p-2">
+                {chatMessages.length === 0 ? (
+                  <p className="text-xs text-gray-500">Aucune conversation pour le moment.</p>
+                ) : (
+                  chatMessages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={`rounded-md p-2 text-xs ${
+                        message.role === 'assistant'
+                          ? 'bg-blue-50 text-gray-700 border border-blue-100'
+                          : 'bg-gray-100 text-gray-800 border border-gray-200'
+                      }`}
+                    >
+                      <div className="font-semibold mb-1">
+                        {message.role === 'assistant' ? 'Assistant' : 'Vous'}
+                      </div>
+                      <div className="whitespace-pre-wrap break-words">{message.content}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="mt-3 flex gap-2">
+                <textarea
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  rows={2}
+                  placeholder="Posez une question à l’IA..."
+                  className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <button
+                onClick={handleAskAssistant}
+                disabled={chatLoading || !chatInput.trim()}
+                className="mt-2 w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {chatLoading ? 'Envoi...' : 'Envoyer'}
+              </button>
+            </div>
 
             {/* ===== OFFRES DES VENDEURS (propositions) ===== */}
             {/* ===== OFFRES DES VENDEURS ===== */}

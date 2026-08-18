@@ -6,7 +6,7 @@ import { prisma } from '@/lib/prisma';
 // GET : récupérer un service spécifique
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -14,9 +14,11 @@ export async function GET(
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     }
 
+    const { id } = await params;
+
     const service = await prisma.service.findFirst({
       where: {
-        id: params.id,
+        id,
         userId: session.user.id,
       },
     });
@@ -35,7 +37,7 @@ export async function GET(
 // PUT : modifier un service
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -43,7 +45,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     }
 
-    const serviceId = params.id;
+    const { id: serviceId } = await params;
     const body = await request.json();
 
     const existing = await prisma.service.findFirst({
@@ -79,7 +81,7 @@ export async function PUT(
 // DELETE : supprimer un service
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -87,7 +89,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     }
 
-    const serviceId = params.id;
+    const { id: serviceId } = await params;
 
     const existing = await prisma.service.findFirst({
       where: {

@@ -1,7 +1,7 @@
 // app/api/projects/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/auth';
+import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 // ===== GET : Récupérer les projets de l’utilisateur connecté =====
@@ -10,6 +10,11 @@ export async function GET() {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    }
+
+    const isArtisan = session.user.role === 'artisan' || session.user.trade === 'artisan';
+    if (!isArtisan) {
+      return NextResponse.json({ error: 'Accès réservé aux artisans' }, { status: 403 });
     }
 
     const projects = await prisma.project.findMany({
@@ -40,6 +45,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     }
 
+    const isArtisan = session.user.role === 'artisan' || session.user.trade === 'artisan';
+    if (!isArtisan) {
+      return NextResponse.json({ error: 'Accès réservé aux artisans' }, { status: 403 });
+    }
+
     const body = await request.json();
 
     // Extraction sécurisée des champs
@@ -52,6 +62,7 @@ export async function POST(request: NextRequest) {
       items = [],
       solDetails,
       murDetails,
+      status,
     } = body;
 
     if (!name || !items || items.length === 0) {
@@ -102,7 +113,9 @@ export async function POST(request: NextRequest) {
         type: type || null,
         surface: surface ? parseFloat(surface) : null,
         budgetEstimate: budgetEstimate ? parseFloat(budgetEstimate) : null,
-        status: 'BROUILLON',
+        status: status && ['BROUILLON', 'PUBLIE', 'EN_COURS', 'EN_ATTENTE'].includes(status)
+          ? status
+          : 'PUBLIE',
         items: {
           create: projectItems,
         },

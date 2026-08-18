@@ -89,16 +89,84 @@ export async function POST(request: NextRequest) {
     const created = [];
     const errors = [];
 
+    const normalizeHeader = (value: string) =>
+      String(value)
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]/g, '');
+
+    const parseNumericValue = (value: unknown) => {
+      if (value === null || value === undefined || value === '') return NaN;
+      const raw = String(value).trim();
+      if (!raw) return NaN;
+      const sanitized = raw
+        .replace(/€/g, '')
+        .replace(/\s/g, '')
+        .replace(/\./g, '')
+        .replace(/,/g, '.')
+        .replace(/[^0-9.-]/g, '');
+      if (!sanitized || sanitized === '-' || sanitized === '.') return NaN;
+      return Number(sanitized);
+    };
+
     for (const row of productsData) {
-      const name = row.name || row.Nom || row.Name || row.nom;
-      const category = row.category || row.Catégorie || row.Category || row.categorie;
-      const salePrice = parseFloat(row.salePrice || row.Prix || row['Prix de vente'] || row.prix || 0);
-      const purchasePrice = parseFloat(row.purchasePrice || row['Prix d\'achat'] || row.purchase_price || 0);
-      const stock = parseInt(row.stock || row.Stock || 0);
-      const tvaRate = parseFloat(row.tvaRate || row.TVA || row.tva || 20);
-      const brand = row.brand || row.Marque || row.Brand || null;
-      const description = row.description || row.Description || null;
-      const imageUrl = row.imageUrl || row.Image || row['Image URL'] || null;
+      const normalizedRow = Object.fromEntries(
+        Object.entries(row).map(([key, value]) => [normalizeHeader(String(key)), value])
+      ) as Record<string, unknown>;
+
+      const pickValue = (...keys: string[]) => {
+        for (const key of keys) {
+          const value = normalizedRow[key];
+          if (value !== undefined && value !== null && String(value).trim() !== '') {
+            return value;
+          }
+        }
+        return '';
+      };
+
+      const name = pickValue(
+        'nomduproduit',
+        'name',
+        'nom',
+        'nomproduit',
+        'productname',
+        'designation',
+        'title'
+      );
+      const category = pickValue(
+        'categorie',
+        'category',
+        'famille',
+        'type',
+        'souscategorie'
+      );
+      const salePriceValue = pickValue(
+        'prixdevente',
+        'prixdeventeeur',
+        'saleprice',
+        'prixvente',
+        'prixdeventeeur',
+        'prixdevente€'
+      );
+      const purchasePriceValue = pickValue(
+        'prixdachat',
+        'prixdachat€',
+        'purchaseprice',
+        'prixachat',
+        'cout'
+      );
+      const stockValue = pickValue('stock', 'stockpcs', 'stockpieces', 'quantite');
+      const tvaRateValue = pickValue('tva', 'tva', 'tauxdeva', 'vat');
+      const brand = pickValue('marque', 'brand', 'fabricant');
+      const description = pickValue('description', 'descriptionproduit', 'descriptif');
+      const imageUrl = pickValue('urlimage', 'image', 'imageurl', 'url');
+
+      const salePrice = parseNumericValue(salePriceValue);
+      const purchasePrice = parseNumericValue(purchasePriceValue);
+      const stock = Number.parseInt(String(stockValue).replace(/[^0-9-]/g, '') || '0', 10);
+      const tvaRate = Number.isFinite(parseNumericValue(tvaRateValue)) ? parseNumericValue(tvaRateValue) : 20;
 
       if (!name || !category) {
         errors.push(`Ligne ignorée (nom ou catégorie manquant): ${JSON.stringify(row)}`);
@@ -114,10 +182,10 @@ export async function POST(request: NextRequest) {
             category: String(category).trim(),
             brand: brand ? String(brand).trim() : null,
             description: description ? String(description).trim() : null,
-            purchasePrice: isNaN(purchasePrice) ? 0 : purchasePrice,
-            salePrice: isNaN(salePrice) ? 0 : salePrice,
-            stock: isNaN(stock) ? 0 : stock,
-            tvaRate: isNaN(tvaRate) ? 20 : tvaRate,
+            purchasePrice: Number.isFinite(purchasePrice) ? purchasePrice : 0,
+            salePrice: Number.isFinite(salePrice) ? salePrice : 0,
+            stock: Number.isFinite(stock) ? stock : 0,
+            tvaRate: Number.isFinite(tvaRate) ? tvaRate : 20,
             imageUrl: imageUrl ? String(imageUrl).trim() : null,
           },
         });

@@ -161,6 +161,16 @@ export default function NouveauProjetPage() {
 
   // ===== Chargement des données =====
   useEffect(() => {
+    if (!session) {
+      router.push('/auth/signin');
+      return;
+    }
+
+    if (session.user.role !== 'artisan' && session.user.trade !== 'artisan') {
+      router.push('/auth/signin');
+      return;
+    }
+
     const fetchData = async () => {
       try {
         const [resProducts, resServices] = await Promise.all([
@@ -183,7 +193,7 @@ export default function NouveauProjetPage() {
       }
     };
     fetchData();
-  }, []);
+  }, [session, router]);
 
   // ===== Mise à jour des services sol/mur en fonction du workType =====
   useEffect(() => {

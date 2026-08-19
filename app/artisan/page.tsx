@@ -29,6 +29,7 @@ export default function ProjetsPage() {
   const { data: session } = useSession();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasActiveSubscription, setHasActiveSubscription] = useState(true);
 
   const fetchProjects = async () => {
     try {
@@ -59,13 +60,9 @@ export default function ProjetsPage() {
       try {
         const res = await fetch('/api/user/agents/check', { credentials: 'include' });
         const data = await res.json();
-        if (!res.ok || !data?.hasActive) {
-          router.push('/abonnement');
-          return;
-        }
+        setHasActiveSubscription(Boolean(res.ok && data?.hasActive));
       } catch {
-        router.push('/abonnement');
-        return;
+        setHasActiveSubscription(false);
       }
 
       await fetchProjects();
@@ -101,6 +98,12 @@ export default function ProjetsPage() {
             <Plus className="w-4 h-4" /> Nouveau projet
           </button>
         </div>
+
+        {!hasActiveSubscription && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Aucun abonnement actif n’est détecté pour votre espace artisan. Vous pouvez quand même consulter vos projets, et activer un agent depuis la page d’abonnement si vous le souhaitez.
+          </div>
+        )}
 
         {projects.length === 0 ? (
           <p className="text-gray-500 text-center py-8">Aucun projet créé.</p>

@@ -105,6 +105,7 @@ export default function NouveauProjetPage() {
 
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [hasActiveSubscription, setHasActiveSubscription] = useState(true);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -189,13 +190,9 @@ export default function NouveauProjetPage() {
       try {
         const res = await fetch('/api/user/agents/check', { credentials: 'include' });
         const data = await res.json();
-        if (!res.ok || !data?.hasActive) {
-          router.push('/abonnement');
-          return;
-        }
+        setHasActiveSubscription(Boolean(res.ok && data?.hasActive));
       } catch {
-        router.push('/abonnement');
-        return;
+        setHasActiveSubscription(false);
       }
 
       try {

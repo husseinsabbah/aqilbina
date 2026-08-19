@@ -8,6 +8,121 @@ const prisma = new PrismaClient();
 // ============================================================
 // SUGGESTION DE PRODUITS EN FONCTION DU PROJET
 // ============================================================
+const normalizeText = (value: string | null | undefined) =>
+  (value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const MATERIAL_RULES: Record<string, { required: string[]; optional?: string[] }> = {
+  carrelage: {
+    required: ['carrelage', 'colle a carrelage', 'joint de carrelage', 'croisillons'],
+    optional: ['primaire d accrochage', 'mortier de chape', 'resine d etancheite'],
+  },
+  peinture: {
+    required: ['peinture', 'apprêt', 'primaire'],
+    optional: ['enduit', 'ruban de masquage'],
+  },
+  plomberie: {
+    required: ['tuyaux', 'raccords', 'joints', 'colliers', 'siphon'],
+    optional: ['robinetterie', 'chauffe eau'],
+  },
+  electricite: {
+    required: ['cables', 'gaines', 'boites de derivation', 'prises', 'interrupteurs'],
+    optional: ['supports', 'domotique'],
+  },
+  menuiserie: {
+    required: ['menuiserie', 'vis', 'quincaillerie', 'colle', 'joint'],
+    optional: ['vernis', 'traitement bois'],
+  },
+  maconnerie: {
+    required: ['ciment', 'mortier', 'brique', 'parpaing', 'chape', 'enduit'],
+    optional: ['treillis', 'sable', 'gravier'],
+  },
+  isolation: {
+    required: ['isolant', 'membrane', 'bande adhesif', 'fixations'],
+    optional: ['pare vapeur'],
+  },
+  toiture: {
+    required: ['couverture', 'sous toiture', 'liteaux', 'fixations', 'etancheite'],
+    optional: ['gouttieres', 'cheneaux'],
+  },
+  chauffage: {
+    required: ['tuyaux', 'isolant', 'vannes', 'thermostat', 'fluides'],
+    optional: ['pompe', 'supports'],
+  },
+  dalle: {
+    required: ['dalle', 'sable', 'gravier', 'sous couche', 'coulis'],
+    optional: ['bordure', 'stabilisateur'],
+  },
+  general: { required: [], optional: [] },
+};
+
+const detectTrade = (project: any): string => {
+  const text = [
+    project?.type,
+    project?.name,
+    project?.description,
+    project?.workType,
+    project?.floorWork,
+    project?.wallWork,
+    project?.ceilingWork,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  if (text.includes('carrelage')) return 'carrelage';
+  if (text.includes('peinture')) return 'peinture';
+  if (text.includes('plomberie')) return 'plomberie';
+  if (text.includes('electricite') || text.includes('électricité')) return 'electricite';
+  if (text.includes('menuiserie')) return 'menuiserie';
+  if (text.includes('maçonnerie') || text.includes('maconnerie')) return 'maconnerie';
+  if (text.includes('isolation')) return 'isolation';
+  if (text.includes('toiture')) return 'toiture';
+  if (text.includes('chauffage') || text.includes('climatisation')) return 'chauffage';
+  if (text.includes('dalle') || text.includes('terrasse')) return 'dalle';
+
+  return 'general';
+};
+
+const findProductMatch = (catalog: any[], material: string) => {
+  const target = normalizeText(material);
+
+  return catalog.find((product) => {
+    const name = normalizeText(product?.name ?? '');
+    const category = normalizeText(product?.category ?? '');
+    return (
+      name.includes(target) ||
+      category.includes(target) ||
+      target.includes(name) ||
+      target.includes(category)
+    );
+  });
+};
+
+const analyzeProjectRequirements = (project: any, vendorProducts: any[] = []) => {
+  const trade = detectTrade(project);
+  const rules = MATERIAL_RULES[trade] ?? MATERIAL_RULES.general;
+
+  const required = (rules.required || []).map((material) => {
+    const match = findProductMatch(vendorProducts, material);
+    return {
+      material,
+      available: !!match,
+      match: match?.name ?? null,
+    };
+  });
+
+  return {
+    trade,
+    required,
+  };
+};
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -31,107 +146,47 @@ export async function POST(request: NextRequest) {
       where: { userId: session.user.id },
     });
 
-    // 3. Initialiser les suggestions
+    const analysis = analyzeProjectRequirements(project, products);
+    const requiredMatches = analysis.required.filter((item) => item.available);
+    const missingRequired = analysis.required.filter((item) => !item.available);
+
     const suggestions: any[] = [];
 
-    // 3.1 Pour le sol (si carrelage ou peinture)
-    if (project.floorWork === 'carrelage' && project.surface) {
-      const tileProducts = products.filter(p =>
-        p.category?.toLowerCase().includes('carrelage') ||
-        p.name?.toLowerCase().includes('carrelage')
-      );
-      if (tileProducts.length > 0) {
-        suggestions.push({
-          area: 'sol',
-          label: 'Sol',
-          surface: project.surface,
-          unit: 'm²',
-          recommendedProducts: tileProducts.map(p => ({
-            id: p.id,
-            name: p.name,
-            price: p.salePrice,
-            stock: p.stock,
-            imageUrl: p.imageUrl,
-          })),
-        });
-      }
+    if (requiredMatches.length > 0) {
+      suggestions.push({
+        area: analysis.trade,
+        label: `Matériaux requis (${analysis.trade})`,
+        surface: project.surface || 0,
+        unit: 'm²',
+        recommendedProducts: requiredMatches.map((item) => {
+          const product = products.find((p) => p.name === item.match || p.name?.toLowerCase().includes(item.material.toLowerCase()));
+          if (!product) return null;
+          return {
+            id: product.id,
+            name: product.name,
+            price: product.salePrice,
+            stock: product.stock,
+            imageUrl: product.imageUrl,
+          };
+        }).filter(Boolean),
+      });
     }
 
-    // 3.2 Pour les murs (si carrelage ou peinture)
-    if (project.wallCount && project.wallCount > 0 && project.height && project.length && project.width) {
-      // Calcul de la surface des murs à traiter
-      const perimeter = 2 * (project.length + project.width);
-      const wallSurface = perimeter * project.height * (project.wallCount / 4);
-      if (project.ceilingWork === 'carrelage' || project.ceilingWork === 'peinture') {
-        // On pourrait proposer de la faïence ou de la peinture murale
-        const wallProducts = products.filter(p =>
-          p.category?.toLowerCase().includes('faïence') ||
-          p.category?.toLowerCase().includes('mural') ||
-          p.name?.toLowerCase().includes('peinture murale')
-        );
-        if (wallProducts.length > 0) {
-          suggestions.push({
-            area: 'murs',
-            label: `Murs (${project.wallCount} mur(s))`,
-            surface: wallSurface,
-            unit: 'm²',
-            recommendedProducts: wallProducts.map(p => ({
-              id: p.id,
-              name: p.name,
-              price: p.salePrice,
-              stock: p.stock,
-              imageUrl: p.imageUrl,
-            })),
-          });
-        }
-      }
-    }
-
-    // 3.3 Pour le plafond
-    if (project.ceilingWork === 'peinture' && project.surface) {
-      const paintProducts = products.filter(p =>
-        p.category?.toLowerCase().includes('peinture') ||
-        p.name?.toLowerCase().includes('peinture')
-      );
-      if (paintProducts.length > 0) {
-        suggestions.push({
-          area: 'plafond',
-          label: 'Plafond',
-          surface: project.surface,
-          unit: 'm²',
-          recommendedProducts: paintProducts.map(p => ({
-            id: p.id,
-            name: p.name,
-            price: p.salePrice,
-            stock: p.stock,
-            imageUrl: p.imageUrl,
-          })),
-        });
-      }
-    }
-
-    // 3.4 Pour la crédence
-    if (project.splashback && project.splashHeight && project.length && project.width) {
-      const splashSurface = (project.length + project.width) * (project.splashHeight / 100);
-      const splashProducts = products.filter(p =>
-        p.category?.toLowerCase().includes('carrelage') ||
-        p.name?.toLowerCase().includes('faïence')
-      );
-      if (splashProducts.length > 0) {
-        suggestions.push({
-          area: 'credence',
-          label: 'Crédence',
-          surface: splashSurface,
-          unit: 'm²',
-          recommendedProducts: splashProducts.map(p => ({
-            id: p.id,
-            name: p.name,
-            price: p.salePrice,
-            stock: p.stock,
-            imageUrl: p.imageUrl,
-          })),
-        });
-      }
+    if (missingRequired.length > 0) {
+      suggestions.push({
+        area: 'manquants',
+        label: 'Matériaux requis mais absents du catalogue',
+        surface: project.surface || 0,
+        unit: 'm²',
+        recommendedProducts: missingRequired.map((item) => ({
+          id: `missing-${item.material}`,
+          name: item.material,
+          price: 0,
+          stock: 0,
+          imageUrl: null,
+          missing: true,
+        })),
+      });
     }
 
     // 4. Si aucune suggestion, message
@@ -142,7 +197,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ suggestions });
+    return NextResponse.json({ suggestions, trade: analysis.trade, missingRequired });
   } catch (error) {
     console.error('Selector error:', error);
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });

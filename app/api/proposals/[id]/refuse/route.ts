@@ -40,6 +40,9 @@ export async function PATCH(
       );
     }
 
+    const body = await request.json().catch(() => ({}));
+    const reason = (body.reason || 'AUTRE').toString();
+    const details = (body.details || '').toString().trim();
     const quantity = proposal.quantity;
 
     // 1. Libérer le stock gelé
@@ -53,7 +56,12 @@ export async function PATCH(
     // 2. Marquer l'offre comme refusée
     const updated = await prisma.vendorProposal.update({
       where: { id },
-      data: { status: 'REFUSE' },
+      data: {
+        status: 'REFUSE',
+        feedbackReason: reason,
+        clientRejectReason: reason,
+        clientRejectDetails: details || proposal.clientRejectDetails || null,
+      },
     });
 
     // 3. Notifier le vendeur

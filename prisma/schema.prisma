@@ -37,6 +37,7 @@ model User {
   workflows     Workflow[]
   workflowActions WorkflowAction[]
   catalogs      Catalog[]
+  offerComparisons OfferComparison[]
 
   assistantConfigs AssistantConfig[]
   assistantLogs    AssistantLog[]
@@ -150,30 +151,82 @@ model Service {
 }
 
 model Project {
-  id            String   @id @default(cuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name          String
-  description   String?
-  type          String?
-  surface       Float?
-  budgetEstimate Float?
-  status        String   @default("BROUILLON")
-  clientName    String?
-  clientPhone   String?
-  clientEmail   String?
-  clientAddress String?
-  startDate     DateTime?
-  endDate       DateTime?
-  paymentNotes  String?
-  attachmentUrl String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                  String
+  description           String?
+  type                  String?
+  surface               Float?
+  budgetEstimate        Float?
+  clientBudgetMax       Float?
+  status                String   @default("BROUILLON")
+  clientName            String?
+  clientPhone           String?
+  clientEmail           String?
+  clientAddress         String?
+  clientFeedbackStatus  String?  @default("PENDING")
+  clientFeedbackMessage String?
+  clientRejectReason    String?
+  clientRejectDetails   String?
+  sharePublicUrl        String?
+  startDate             DateTime?
+  endDate               DateTime?
+  paymentNotes          String?
+  attachmentUrl         String?
+  projectProgressMedia  String?
+  portfolioMedia        String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   items           ProjectItem[]
   vendorProposals VendorProposal[]
+  estimates       ProjectEstimate[]
+  steps           ProjectStep[]
+  comparisons     OfferComparison[]
   chatMessages    ChatMessage[]
   userTutorials   UserTutorial[]
+}
+
+model ProjectEstimate {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  material    String
+  quantity    Float
+  unit        String
+  priceUnit   Float?
+  totalPrice  Float?
+  provider    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ProjectStep {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  order       Int
+  durationDays Int?
+  isCompleted Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model OfferComparison {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  vendorId    String
+  vendor      User     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  totalPrice  Float
+  deliveryDays Int?
+  products    String
+  score       Float?
+  isSelected  Boolean  @default(false)
+  createdAt   DateTime @default(now())
 }
 
 model ProjectItem {
@@ -207,6 +260,8 @@ model VendorProposal {
   deliveryDate    DateTime?
   expirationDate  DateTime?
   feedbackReason  String?
+  clientRejectReason String?
+  clientRejectDetails String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }

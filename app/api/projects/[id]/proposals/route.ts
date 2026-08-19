@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { requireRole } from '@/lib/role-access';
 
 export async function GET(
   request: Request,
@@ -10,16 +11,12 @@ export async function GET(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    const auth = requireRole(session, ['artisan'], 'Accès réservé aux artisans');
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
     const { id: projectId } = await params;
-
-    const isArtisan = session.user.role === 'artisan' || session.user.trade === 'artisan';
-    if (!isArtisan) {
-      return NextResponse.json({ error: 'Accès réservé aux artisans' }, { status: 403 });
-    }
 
     // Vérifier que le projet appartient à l'artisan
     const project = await prisma.project.findUnique({

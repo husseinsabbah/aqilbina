@@ -10,17 +10,32 @@ export async function GET() {
       return NextResponse.json({ hasActive: false }, { status: 401 });
     }
 
+    const now = new Date();
     const userAgents = await prisma.userAgent.findMany({
-      where: {
-        userId: session.user.id,
-        OR: [
-          { status: 'TRIAL', trialEndDate: { gt: new Date() } },
-          { status: 'ACTIVE', endDate: { gt: new Date() } },
-        ],
-      },
+      where: { userId: session.user.id },
+      include: { agent: true },
+      orderBy: { createdAt: 'desc' },
     });
 
-    return NextResponse.json({ hasActive: userAgents.length > 0 });
+    const activeAgents = userAgents.filter((userAgent) => {
+      const isTrialActive = userAgent.status === 'TRIAL' && userAgent.trialEndDate && userAgent.trialEndDate > now;
+      const isActiveSubscription = userAgent.status === 'ACTIVE' && userAgent.endDate && userAgent.endDate > now;
+      return isTrialActive || isActiveSubscription;
+    });
+
+    const activeAgent = activeAgents[0] ?? null;
+
+    return NextResponse.json({
+      hasActive: activeAgents.length > 0,
+      activeAgent: activeAgent ? {
+        id: activeAgent.id,
+        agentId: activeAgent.agentId,
+        name: activeAgent.customName || activeAgent.agent.name,
+        status: activeAgent.status,
+        trialEndDate: activeAgent.trialEndDate,
+        endDate: activeAgent.endDate,
+      } : null,
+    });
   } catch (error) {
     console.error('Check agent error:', error);
     return NextResponse.json(

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { requireRole } from '@/lib/role-access';
 
 // ========== GET : récupérer un projet avec ses items ==========
 export async function GET(
@@ -11,13 +12,9 @@ export async function GET(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
-    }
-
-    const isArtisan = session.user.role === 'artisan' || session.user.trade === 'artisan';
-    if (!isArtisan) {
-      return NextResponse.json({ error: 'Accès réservé aux artisans' }, { status: 403 });
+    const auth = requireRole(session, ['artisan'], 'Accès réservé aux artisans');
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
     const { id: projectId } = await params;
@@ -55,16 +52,12 @@ export async function PUT(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    const auth = requireRole(session, ['artisan'], 'Accès réservé aux artisans');
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
     const { id: projectId } = await params;
-
-    const isArtisan = session.user.role === 'artisan' || session.user.trade === 'artisan';
-    if (!isArtisan) {
-      return NextResponse.json({ error: 'Accès réservé aux artisans' }, { status: 403 });
-    }
 
     const project = await prisma.project.findUnique({
       where: { id: projectId },
@@ -75,13 +68,44 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { paymentNotes, attachmentUrl } = body;
+    const {
+      paymentNotes,
+      attachmentUrl,
+      startDate,
+      endDate,
+      clientName,
+      clientPhone,
+      clientEmail,
+      clientAddress,
+      clientFeedbackStatus,
+      clientFeedbackMessage,
+      clientRejectReason,
+      clientRejectDetails,
+      sharePublicUrl,
+      projectProgressMedia,
+      portfolioMedia,
+      clientBudgetMax,
+    } = body;
 
     const updatedProject = await prisma.project.update({
       where: { id: projectId },
       data: {
         paymentNotes: paymentNotes ?? project.paymentNotes,
         attachmentUrl: attachmentUrl ?? project.attachmentUrl,
+        startDate: startDate ? new Date(startDate) : project.startDate,
+        endDate: endDate ? new Date(endDate) : project.endDate,
+        clientName: clientName ?? project.clientName,
+        clientPhone: clientPhone ?? project.clientPhone,
+        clientEmail: clientEmail ?? project.clientEmail,
+        clientAddress: clientAddress ?? project.clientAddress,
+        clientFeedbackStatus: clientFeedbackStatus ?? project.clientFeedbackStatus,
+        clientFeedbackMessage: clientFeedbackMessage ?? project.clientFeedbackMessage,
+        clientRejectReason: clientRejectReason ?? project.clientRejectReason,
+        clientRejectDetails: clientRejectDetails ?? project.clientRejectDetails,
+        sharePublicUrl: sharePublicUrl ?? project.sharePublicUrl,
+        projectProgressMedia: projectProgressMedia ?? project.projectProgressMedia,
+        portfolioMedia: portfolioMedia ?? project.portfolioMedia,
+        clientBudgetMax: clientBudgetMax !== undefined ? (clientBudgetMax === '' || clientBudgetMax === null ? null : Number(clientBudgetMax)) : project.clientBudgetMax,
       },
     });
 

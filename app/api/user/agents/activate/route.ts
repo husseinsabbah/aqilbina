@@ -140,6 +140,23 @@ export async function POST(request: NextRequest) {
     const safeQuantity = Math.max(1, Number(quantity) || 1);
     const requestedNames = Array.isArray(agentNames) ? agentNames : [];
 
+    const hasExistingActive = await prisma.userAgent.findFirst({
+      where: {
+        userId: session.user.id,
+        agentId: agent.id,
+        OR: [
+          { status: 'TRIAL', trialEndDate: { gt: new Date() } },
+          { status: 'ACTIVE', endDate: { gt: new Date() } },
+        ],
+      },
+    });
+
+    if (hasExistingActive) {
+      return NextResponse.json({
+        error: 'Vous avez déjà un abonnement actif pour cet agent.',
+      }, { status: 409 });
+    }
+
     const customNames = Array.from({ length: safeQuantity }, (_, index) => {
       const rawValue = requestedNames[index] ?? '';
       return sanitizeAgentName(rawValue, `${agent.name} ${index + 1}`);

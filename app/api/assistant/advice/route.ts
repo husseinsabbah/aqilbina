@@ -4,11 +4,156 @@ import { authOptions } from '../../../auth';
 import { prisma } from '@/lib/prisma';
 
 // ============================================================
+// RÈGLES MÉTIER GÉNÉRALES PAR TYPE DE CHANTIER
+// ============================================================
+const normalizeText = (value: string | null | undefined) =>
+  (value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const MATERIAL_RULES: Record<string, { required: string[]; optional?: string[] }> = {
+  carrelage: {
+    required: ['carrelage', 'colle a carrelage', 'joint de carrelage', 'croisillons'],
+    optional: ['primaire d accrochage', 'mortier de chape', 'resine d etancheite', 'disque de coupe'],
+  },
+  peinture: {
+    required: ['peinture', 'apprêt', 'primaire'],
+    optional: ['enduit', 'ruban de masquage', 'papier abrasif'],
+  },
+  plomberie: {
+    required: ['tuyaux', 'raccords', 'joints', 'colliers', 'siphon'],
+    optional: ['robinetterie', 'chauffe eau', 'produit d etancheite'],
+  },
+  electricite: {
+    required: ['cables', 'gaines', 'boites de derivation', 'prises', 'interrupteurs', 'disjoncteurs'],
+    optional: ['supports', 'domotique', 'cache bornes'],
+  },
+  menuiserie: {
+    required: ['menuiserie', 'vis', 'quincaillerie', 'colle', 'joint'],
+    optional: ['vernis', 'traitement bois', 'lame de finition'],
+  },
+  maconnerie: {
+    required: ['ciment', 'mortier', 'brique', 'parpaing', 'chape', 'enduit'],
+    optional: ['treillis', 'sable', 'gravier'],
+  },
+  isolation: {
+    required: ['isolant', 'membrane', 'bande adhesif', 'fixations'],
+    optional: ['pare vapeur', 'joint de finition'],
+  },
+  toiture: {
+    required: ['couverture', 'sous toiture', 'liteaux', 'fixations', 'etancheite'],
+    optional: ['gouttieres', 'cheneaux', 'membrane d etancheite'],
+  },
+  chauffage: {
+    required: ['tuyaux', 'isolant', 'vannes', 'thermostat', 'fluides'],
+    optional: ['pompe', 'supports', 'mastic'],
+  },
+  dalle: {
+    required: ['dalle', 'sable', 'gravier', 'sous couche', 'coulis'],
+    optional: ['bordure', 'stabilisateur', 'produit de finition'],
+  },
+  general: {
+    required: [],
+    optional: [],
+  },
+};
+
+const detectTrade = (project: any): string => {
+  const text = [
+    project?.type,
+    project?.name,
+    project?.description,
+    project?.workType,
+    project?.floorWork,
+    project?.wallWork,
+    project?.ceilingWork,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  if (text.includes('carrelage')) return 'carrelage';
+  if (text.includes('peinture')) return 'peinture';
+  if (text.includes('plomberie')) return 'plomberie';
+  if (text.includes('electricite') || text.includes('electricité') || text.includes('electricite')) return 'electricite';
+  if (text.includes('menuiserie')) return 'menuiserie';
+  if (text.includes('maçonnerie') || text.includes('maconnerie')) return 'maconnerie';
+  if (text.includes('isolation')) return 'isolation';
+  if (text.includes('toiture')) return 'toiture';
+  if (text.includes('chauffage') || text.includes('climatisation')) return 'chauffage';
+  if (text.includes('dalle') || text.includes('terrasse')) return 'dalle';
+
+  return 'general';
+};
+
+const findProductMatch = (catalog: any[], material: string) => {
+  const target = normalizeText(material);
+
+  return catalog.find((product) => {
+    const name = normalizeText(product?.name ?? '');
+    const category = normalizeText(product?.category ?? '');
+
+    return (
+      name.includes(target) ||
+      category.includes(target) ||
+      target.includes(name) ||
+      target.includes(category)
+    );
+  });
+};
+
+export const analyzeProjectRequirements = (project: any, vendorProducts: any[] = []) => {
+  const trade = detectTrade(project);
+  const rules = MATERIAL_RULES[trade] ?? MATERIAL_RULES.general;
+
+  const required = (rules.required || []).map((material) => {
+    const match = findProductMatch(vendorProducts, material);
+    return {
+      material,
+      required: true,
+      available: !!match,
+      match: match?.name ?? null,
+      status: match ? 'available' : 'missing',
+    };
+  });
+
+  const optional = (rules.optional || []).map((material) => {
+    const match = findProductMatch(vendorProducts, material);
+    return {
+      material,
+      required: false,
+      available: !!match,
+      match: match?.name ?? null,
+      status: match ? 'available' : 'optional',
+    };
+  });
+
+  const missing = required.filter((item) => item.status === 'missing');
+  const summary =
+    missing.length > 0
+      ? `Ce chantier nécessite ${missing.map((item) => item.material).join(', ')}. Ces éléments ne sont pas tous présents dans le catalogue vendeur.`
+      : 'Le catalogue couvre bien les éléments requis pour ce type de chantier.';
+
+  return {
+    trade,
+    required,
+    optional,
+    summary,
+  };
+};
+
+// ============================================================
 // FALLBACK LOCAL (RÈGLES MÉTIER)
 // ============================================================
 function getLocalAdvice(project: any, trade: string) {
   const advice = [];
   const items = project.items || [];
+  const vendorProducts = items.map((item: any) => item.product).filter(Boolean);
+  const analysis = analyzeProjectRequirements(project, vendorProducts);
 
   if (items.length === 0) {
     advice.push({
@@ -17,6 +162,16 @@ function getLocalAdvice(project: any, trade: string) {
       description: 'Votre projet ne contient encore aucun produit. Ajoutez des éléments pour obtenir des conseils.',
     });
     return { advice };
+  }
+
+  const missingRequired = analysis.required.filter((item) => item.status === 'missing');
+  if (missingRequired.length > 0) {
+    advice.push({
+      type: 'warning',
+      title: '📦 Matériaux requis manquants',
+      description: `Pour un chantier ${analysis.trade}, ces éléments sont nécessaires et absents du catalogue vendeur : ${missingRequired.map((item) => item.material).join(', ')}.`,
+      action: 'Ajouter les matériaux indispensables',
+    });
   }
 
   // Vérification des produits manquants (ex: carrelage sans colle)
@@ -69,7 +224,7 @@ function getLocalAdvice(project: any, trade: string) {
     });
   }
 
-  return { advice };
+  return { advice, analysis };
 }
 
 // ============================================================

@@ -127,15 +127,19 @@ export default function Sidebar({
   };
 
   const getMenus = (): MenuItem[] => {
-    if (!currentAgent) return [];
-    if (currentAgent.type === "artisan") {
+    const role = session?.user?.role;
+
+    if (role === "artisan") {
       return [
         { label: "Catalogue", section: "catalogue", icon: Package, href: "/artisan/catalogue" },
         { label: "Projets", section: "projets", icon: Eye, href: "/artisan/projets" },
         { label: "Offres reçues", section: "offres", icon: Send, href: "/artisan/offres" },
+        { label: "Portfolio", section: "portfolio", icon: Store, href: "/artisan/portfolio" },
         { label: "Paramètres", section: "parametres", icon: Settings, href: "/artisan/parametres" },
       ];
-    } else if (currentAgent.type === "vendeur") {
+    }
+
+    if (role === "vendeur") {
       return [
         { label: "Dashboard", section: "dashboard", icon: LayoutDashboard, href: "/vendeur?section=dashboard" },
         { label: "Catalogue", section: "catalogue", icon: Package, href: "/vendeur?section=catalogue" },
@@ -145,6 +149,17 @@ export default function Sidebar({
         { label: "Assistant IA", section: "ia", icon: Sparkles, href: "/vendeur?section=ia" },
       ];
     }
+
+    if (currentAgent?.type === "artisan") {
+      return [
+        { label: "Catalogue", section: "catalogue", icon: Package, href: "/artisan/catalogue" },
+        { label: "Projets", section: "projets", icon: Eye, href: "/artisan/projets" },
+        { label: "Offres reçues", section: "offres", icon: Send, href: "/artisan/offres" },
+        { label: "Portfolio", section: "portfolio", icon: Store, href: "/artisan/portfolio" },
+        { label: "Paramètres", section: "parametres", icon: Settings, href: "/artisan/parametres" },
+      ];
+    }
+
     return [];
   };
 

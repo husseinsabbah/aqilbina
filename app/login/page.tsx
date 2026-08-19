@@ -41,7 +41,7 @@ export default function LoginPage() {
       } else if (role === "artisan" || trade === "artisan") {
         router.push("/artisan");
       } else {
-        router.push("/dashboard");
+        router.push("/");
       }
     } catch (err) {
       console.error("Erreur:", err);

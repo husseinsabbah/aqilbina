@@ -14,6 +14,15 @@ type Product = {
   stock: number;
 };
 
+const MARKET_REFERENCE_PRODUCTS: Product[] = [
+  { id: 'market-ceramique-1', name: 'Carrelage céramique 60x60', category: 'Sol', salePrice: 24.5, stock: 999 },
+  { id: 'market-colle-1', name: 'Colle à carrelage standard', category: 'Adjuvant', salePrice: 8.9, stock: 999 },
+  { id: 'market-joint-1', name: 'Joint de carrelage blanc', category: 'Finition', salePrice: 6.2, stock: 999 },
+  { id: 'market-primaire-1', name: 'Primaire d’accrochage', category: 'Préparation', salePrice: 11.4, stock: 999 },
+  { id: 'market-mortier-1', name: 'Mortier de chape', category: 'Préparation', salePrice: 15.8, stock: 999 },
+  { id: 'market-etancheite-1', name: 'Résine d’étanchéité', category: 'Étanchéité', salePrice: 18.9, stock: 999 },
+];
+
 type Service = {
   id: string;
   name: string;
@@ -83,6 +92,11 @@ const SUGGESTED_PRODUCTS = {
     "Réglette de nivellement",
     "Disque de coupe (carrelage)",
   ],
+};
+
+const FALLBACK_SERVICE_PRICES = {
+  refresh: { sol: 32, mur: 35 },
+  renovation: { sol: 45, mur: 52 },
 };
 
 export default function NouveauProjetPage() {
@@ -171,17 +185,27 @@ export default function NouveauProjetPage() {
       return;
     }
 
-    const fetchData = async () => {
+    const ensureAccess = async () => {
+      try {
+        const res = await fetch('/api/user/agents/check', { credentials: 'include' });
+        const data = await res.json();
+        if (!res.ok || !data?.hasActive) {
+          router.push('/abonnement');
+          return;
+        }
+      } catch {
+        router.push('/abonnement');
+        return;
+      }
+
       try {
         const [resProducts, resServices] = await Promise.all([
           fetch("/api/seller/products", { credentials: "include" }),
           fetch("/api/services", { credentials: "include" }),
         ]);
 
-        if (resProducts.ok) {
-          const data = await resProducts.json();
-          setAllProducts(data);
-        }
+        const marketProducts = resProducts.ok ? await resProducts.json() : [];
+        setAllProducts((marketProducts && marketProducts.length > 0) ? marketProducts : MARKET_REFERENCE_PRODUCTS);
 
         if (resServices.ok) {
           const data = await resServices.json();
@@ -190,14 +214,16 @@ export default function NouveauProjetPage() {
         }
       } catch (error) {
         console.error("Erreur chargement:", error);
+        setAllProducts(MARKET_REFERENCE_PRODUCTS);
       }
     };
-    fetchData();
+
+    void ensureAccess();
   }, [session, router]);
 
   // ===== Mise à jour des services sol/mur en fonction du workType =====
   useEffect(() => {
-    if (!formData.workType || services.length === 0) {
+    if (!formData.workType) {
       setSolService(null);
       setMurService(null);
       setSolUnitPrice(0);
@@ -205,60 +231,82 @@ export default function NouveauProjetPage() {
       return;
     }
 
-    const workLabel = formData.workType === "refresh" ? "Rafraîchissement" : "Rénovation";
+    const normalize = (value: string | null | undefined) =>
+      (value ?? "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
 
-    // Chercher les services correspondants
-    const sol = services.find(
-      (s) =>
-        (s.serviceCategory === `Sol - ${workLabel}` ||
-          s.serviceCategory === "Sol" ||
-          s.serviceCategory === "Pose") &&
-        s.name.toLowerCase().includes(workLabel.toLowerCase())
-    );
+    const workKeywords =
+      formData.workType === "refresh"
+        ? ["rafraichissement", "refresh", "relooking", "support existant", "pose sur support", "reprise", "retouche"]
+        : ["renovation", "complete", "complet", "demolition", "preparation", "preparatif", "refection"];
+
+    const pickServiceForSurface = (surface: "sol" | "mur") => {
+      const targetWords =
+        surface === "sol"
+          ? ["sol", "plancher", "carrelage", "pose sol", "pose de carrelage sol", "carrelage sol"]
+          : ["mur", "murs", "paroi", "faience", "pose mur", "pose de carrelage mur", "carrelage mur"];
+
+      const candidates = services.filter((s) => s.isActive);
+
+      const exactRegExp = surface === "sol" ? /(sol|plancher|carrelage)/i : /(mur|murs|paroi|faience)/i;
+      const sameSurfaceCandidates = candidates.filter((s) => {
+        const haystack = normalize(`${s.serviceCategory} ${s.name}`);
+        return targetWords.some((word) => haystack.includes(word)) || exactRegExp.test(s.serviceCategory + ' ' + s.name);
+      });
+
+      const workSpecific = sameSurfaceCandidates.find((s) => {
+        const haystack = normalize(`${s.serviceCategory} ${s.name}`);
+        return workKeywords.some((word) => haystack.includes(word));
+      });
+
+      if (workSpecific) return workSpecific;
+
+      const generic = sameSurfaceCandidates.find((s) => {
+        const haystack = normalize(`${s.serviceCategory} ${s.name}`);
+        return ["pose", "carrelage", "prestation", "travail"].some((word) => haystack.includes(word));
+      });
+
+      if (surface === "sol" && surfaceSol === 0) return null;
+      if (surface === "mur" && surfaceMurs === 0) return null;
+
+      return generic ?? sameSurfaceCandidates[0] ?? null;
+    };
+
+    const fallbackService = (surface: "sol" | "mur") => ({
+      id: `fallback-${surface}`,
+      name: surface === "sol" ? "Pose de carrelage sol" : "Pose de carrelage mur",
+      serviceCategory: surface === "sol" ? "sol" : "mur",
+      unit: "m²",
+      unitPrice: FALLBACK_SERVICE_PRICES[formData.workType as keyof typeof FALLBACK_SERVICE_PRICES][surface],
+      isActive: true,
+    });
+
+    const sol = pickServiceForSurface("sol") ?? (surfaceSol > 0 ? fallbackService("sol") : null);
     if (sol) {
-      setSolService(sol);
+      setSolService(sol as Service);
       setSolUnitPrice(sol.unitPrice);
     } else {
-      // Fallback : prendre le premier service "Sol" si pas de catégorie spécifique
-      const fallbackSol = services.find(
-        (s) => s.serviceCategory === "Sol" || s.serviceCategory === "Pose"
-      );
-      if (fallbackSol) {
-        setSolService(fallbackSol);
-        setSolUnitPrice(fallbackSol.unitPrice);
-      } else {
-        setSolService(null);
-        setSolUnitPrice(0);
-      }
+      setSolService(null);
+      setSolUnitPrice(0);
     }
 
-    const mur = services.find(
-      (s) =>
-        (s.serviceCategory === `Mur - ${workLabel}` ||
-          s.serviceCategory === "Mur" ||
-          s.serviceCategory === "Pose") &&
-        s.name.toLowerCase().includes(workLabel.toLowerCase())
-    );
+    const mur = pickServiceForSurface("mur") ?? (surfaceMurs > 0 ? fallbackService("mur") : null);
     if (mur) {
-      setMurService(mur);
+      setMurService(mur as Service);
       setMurUnitPrice(mur.unitPrice);
     } else {
-      const fallbackMur = services.find(
-        (s) => s.serviceCategory === "Mur" || s.serviceCategory === "Pose"
-      );
-      if (fallbackMur) {
-        setMurService(fallbackMur);
-        setMurUnitPrice(fallbackMur.unitPrice);
-      } else {
-        setMurService(null);
-        setMurUnitPrice(0);
-      }
+      setMurService(null);
+      setMurUnitPrice(0);
     }
-  }, [formData.workType, services]);
+  }, [formData.workType, services, surfaceSol, surfaceMurs]);
 
   // ===== Produits suggérés =====
   useEffect(() => {
-    if (!formData.workType || allProducts.length === 0) {
+    if (!formData.workType) {
       setSuggestedProducts([]);
       return;
     }
@@ -267,9 +315,10 @@ export default function NouveauProjetPage() {
     const foundProducts: SelectedProduct[] = [];
 
     suggestions.forEach((name) => {
-      const product = allProducts.find(
-        (p) => p.name.toLowerCase().includes(name.toLowerCase())
-      );
+      const product =
+        allProducts.find((p) => p.name.toLowerCase().includes(name.toLowerCase())) ||
+        MARKET_REFERENCE_PRODUCTS.find((p) => p.name.toLowerCase().includes(name.toLowerCase()));
+
       if (product) {
         foundProducts.push({
           id: product.id,
@@ -280,7 +329,12 @@ export default function NouveauProjetPage() {
       }
     });
 
-    setSuggestedProducts(foundProducts);
+    setSuggestedProducts(foundProducts.length > 0 ? foundProducts : MARKET_REFERENCE_PRODUCTS.slice(0, 4).map((product) => ({
+      id: product.id,
+      name: product.name,
+      quantity: 1,
+      unitPrice: product.salePrice,
+    })));
   }, [formData.workType, allProducts]);
 
   // ===== Recherche de produits (sol) =====
@@ -398,6 +452,15 @@ export default function NouveauProjetPage() {
   const buildItems = (): ProjectItem[] => {
     const items: ProjectItem[] = [];
 
+    const effectiveSuggestedProducts = suggestedProducts.length > 0
+      ? suggestedProducts
+      : (formData.workType ? MARKET_REFERENCE_PRODUCTS.slice(0, 4).map((product) => ({
+          id: product.id,
+          name: product.name,
+          quantity: 1,
+          unitPrice: product.salePrice,
+        })) : []);
+
     // Produits du sol
     solProducts.forEach((p) => {
       items.push({
@@ -425,7 +488,7 @@ export default function NouveauProjetPage() {
     });
 
     // Produits suggérés
-    suggestedProducts.forEach((p) => {
+    effectiveSuggestedProducts.forEach((p) => {
       items.push({
         productId: p.id,
         quantity: p.quantity,
@@ -437,25 +500,37 @@ export default function NouveauProjetPage() {
     });
 
     // Service Sol
-    if (surfaceSol > 0 && solService) {
+    const effectiveSolService = solService || (surfaceSol > 0 && formData.workType ? {
+      id: `fallback-sol`,
+      name: 'Pose de carrelage sol',
+      unitPrice: FALLBACK_SERVICE_PRICES[formData.workType as keyof typeof FALLBACK_SERVICE_PRICES]?.sol ?? 32,
+    } : null);
+
+    if (surfaceSol > 0 && effectiveSolService) {
       items.push({
-        serviceId: solService.id,
+        serviceId: effectiveSolService.id,
         quantity: surfaceSol,
-        unitPriceHtAtSale: solUnitPrice / 1.2,
+        unitPriceHtAtSale: (solUnitPrice || effectiveSolService.unitPrice) / 1.2,
         tvaRate: 20,
-        name: `${solService.name} (sol)`,
+        name: `${effectiveSolService.name} (sol)`,
         type: "service",
       });
     }
 
     // Service Mur
-    if (surfaceMurs > 0 && murService) {
+    const effectiveMurService = murService || (surfaceMurs > 0 && formData.workType ? {
+      id: `fallback-mur`,
+      name: 'Pose de carrelage mur',
+      unitPrice: FALLBACK_SERVICE_PRICES[formData.workType as keyof typeof FALLBACK_SERVICE_PRICES]?.mur ?? 35,
+    } : null);
+
+    if (surfaceMurs > 0 && effectiveMurService) {
       items.push({
-        serviceId: murService.id,
+        serviceId: effectiveMurService.id,
         quantity: surfaceMurs,
-        unitPriceHtAtSale: murUnitPrice / 1.2,
+        unitPriceHtAtSale: (murUnitPrice || effectiveMurService.unitPrice) / 1.2,
         tvaRate: 20,
-        name: `${murService.name} (murs)`,
+        name: `${effectiveMurService.name} (murs)`,
         type: "service",
       });
     }
@@ -471,8 +546,13 @@ export default function NouveauProjetPage() {
       return;
     }
 
+    const directSurfaceSol = solLongueur && solLargeur ? Number(solLongueur) * Number(solLargeur) : surfaceSol;
+    const directSurfaceMurs = walls.reduce((acc, wall) => acc + Number(wall.longueur || 0) * Number(wall.hauteur || 0), 0) || surfaceMurs;
+
     const items = buildItems();
-    if (items.length === 0) {
+    const hasFallbackContent = directSurfaceSol > 0 || directSurfaceMurs > 0 || solProducts.length > 0 || murProducts.length > 0 || suggestedProducts.length > 0;
+
+    if (items.length === 0 && !hasFallbackContent) {
       alert("Veuillez ajouter au moins un produit ou une prestation (sol ou murs).");
       return;
     }
@@ -482,6 +562,7 @@ export default function NouveauProjetPage() {
       const apiItems = items.map((item) => ({
         productId: item.productId,
         serviceId: item.serviceId,
+        name: item.name,
         quantity: item.quantity,
         unitPriceHtAtSale: item.unitPriceHtAtSale,
         tvaRate: item.tvaRate,

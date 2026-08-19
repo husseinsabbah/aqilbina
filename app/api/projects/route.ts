@@ -3,18 +3,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { requireRole } from '@/lib/role-access';
 
 // ===== GET : Récupérer les projets de l’utilisateur connecté =====
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
-    }
-
-    const isArtisan = session.user.role === 'artisan' || session.user.trade === 'artisan';
-    if (!isArtisan) {
-      return NextResponse.json({ error: 'Accès réservé aux artisans' }, { status: 403 });
+    const auth = requireRole(session, ['artisan'], 'Accès réservé aux artisans');
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
     const projects = await prisma.project.findMany({
@@ -41,31 +38,47 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    const auth = requireRole(session, ['artisan'], 'Accès réservé aux artisans');
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
-    const isArtisan = session.user.role === 'artisan' || session.user.trade === 'artisan';
-    if (!isArtisan) {
-      return NextResponse.json({ error: 'Accès réservé aux artisans' }, { status: 403 });
+    const activeSubscription = await prisma.userAgent.findFirst({
+      where: {
+        userId: session.user.id,
+        OR: [
+          { status: 'TRIAL', trialEndDate: { gt: new Date() } },
+          { status: 'ACTIVE', endDate: { gt: new Date() } },
+        ],
+      },
+    });
+
+    if (!activeSubscription) {
+      return NextResponse.json({
+        error: 'Vous devez activer un abonnement pour créer un projet.',
+      }, { status: 403 });
     }
 
     const body = await request.json();
 
-    // Extraction sécurisée des champs
     const {
       name,
       description,
       type,
       surface,
       budgetEstimate,
+      clientBudgetMax,
       items = [],
       solDetails,
       murDetails,
       status,
     } = body;
 
-    if (!name || !items || items.length === 0) {
+    const validItems = Array.isArray(items)
+      ? items.filter((item: any) => item && (item.productId || item.serviceId))
+      : [];
+
+    if (!name || validItems.length === 0) {
       return NextResponse.json(
         { error: 'Nom et au moins un item (produit ou service) sont obligatoires' },
         { status: 400 }
@@ -83,26 +96,72 @@ export async function POST(request: NextRequest) {
       fullDescription = JSON.stringify(details);
     }
 
-    // Préparer les items (produits et services)
-    const projectItems = items.map((item: any) => {
-      if (item.productId) {
-        return {
-          productId: item.productId,
-          quantity: item.quantity,
-          unitPriceHtAtSale: item.unitPriceHtAtSale,
-          tvaRate: item.tvaRate || 20,
-        };
-      } else if (item.serviceId) {
-        return {
-          serviceId: item.serviceId,
-          quantity: item.quantity,
-          unitPriceHtAtSale: item.unitPriceHtAtSale,
-          tvaRate: item.tvaRate || 20,
-        };
-      } else {
-        throw new Error('Chaque item doit avoir soit productId soit serviceId');
-      }
+    const defaultCatalog = await prisma.catalog.findFirst({
+      where: { userId: session.user.id },
+      orderBy: { createdAt: 'asc' },
+    }) ?? await prisma.catalog.create({
+      data: {
+        userId: session.user.id,
+        name: 'Catalogue principal',
+        description: 'Catalogue principal généré automatiquement',
+      },
     });
+
+    // Préparer les items (produits et services)
+    const projectItems = await Promise.all(validItems.map(async (item: any) => {
+      if (item.productId) {
+        const productId = String(item.productId);
+
+        const existingProduct = await prisma.product.findUnique({ where: { id: productId } });
+        const createdProduct = existingProduct ?? await prisma.product.create({
+          data: {
+            id: productId,
+            userId: session.user.id,
+            catalogId: defaultCatalog.id,
+            name: String(item.name || 'Produit requis').trim() || 'Produit requis',
+            description: 'Produit généré automatiquement pour ce projet',
+            category: 'Divers',
+            purchasePrice: Number(item.unitPriceHtAtSale || 0) * 1.2,
+            salePrice: Number(item.unitPriceHtAtSale || 0) * 1.2,
+            stock: 999,
+            tvaRate: Number(item.tvaRate || 20),
+          },
+        });
+
+        return {
+          productId: createdProduct.id,
+          quantity: Number(item.quantity || 1),
+          unitPriceHtAtSale: Number(item.unitPriceHtAtSale || 0),
+          tvaRate: Number(item.tvaRate || 20),
+        };
+      }
+
+      if (item.serviceId) {
+        const serviceId = String(item.serviceId);
+
+        const existingService = await prisma.service.findUnique({ where: { id: serviceId } });
+        const createdService = existingService ?? await prisma.service.create({
+          data: {
+            id: serviceId,
+            userId: session.user.id,
+            name: String(item.name || 'Prestation demandée').trim() || 'Prestation demandée',
+            serviceCategory: 'prestation',
+            unit: 'm²',
+            unitPrice: Number(item.unitPriceHtAtSale || 0) * 1.2,
+            isActive: true,
+          },
+        });
+
+        return {
+          serviceId: createdService.id,
+          quantity: Number(item.quantity || 1),
+          unitPriceHtAtSale: Number(item.unitPriceHtAtSale || 0),
+          tvaRate: Number(item.tvaRate || 20),
+        };
+      }
+
+      throw new Error('Chaque item doit avoir soit productId soit serviceId');
+    }));
 
     // Créer le projet
     const project = await prisma.project.create({
@@ -113,6 +172,7 @@ export async function POST(request: NextRequest) {
         type: type || null,
         surface: surface ? parseFloat(surface) : null,
         budgetEstimate: budgetEstimate ? parseFloat(budgetEstimate) : null,
+        clientBudgetMax: clientBudgetMax ? parseFloat(clientBudgetMax) : null,
         status: status && ['BROUILLON', 'PUBLIE', 'EN_COURS', 'EN_ATTENTE'].includes(status)
           ? status
           : 'PUBLIE',

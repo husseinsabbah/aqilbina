@@ -2,13 +2,15 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { requireRole } from '@/lib/role-access';
 
 // GET : récupérer tous les projets disponibles pour le vendeur
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    const auth = requireRole(session, ['vendeur'], 'Accès réservé aux vendeurs');
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
     // Récupérer les produits du vendeur avec leur stock

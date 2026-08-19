@@ -55,7 +55,23 @@ export default function ProjetsPage() {
       return;
     }
 
-    fetchProjects();
+    const checkAccess = async () => {
+      try {
+        const res = await fetch('/api/user/agents/check', { credentials: 'include' });
+        const data = await res.json();
+        if (!res.ok || !data?.hasActive) {
+          router.push('/abonnement');
+          return;
+        }
+      } catch {
+        router.push('/abonnement');
+        return;
+      }
+
+      await fetchProjects();
+    };
+
+    void checkAccess();
   }, [session, router]);
 
   const getStatusBadge = (status: string) => {

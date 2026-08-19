@@ -28,8 +28,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     }
     const body = await request.json();
-    const { name, description, serviceCategory, unit, unitPrice, isActive } = body;
-    if (!name || !serviceCategory || !unit || unitPrice === undefined) {
+    const { name, description, serviceCategory, surface, workType, unit, unitPrice, isActive } = body;
+    const computedCategory = serviceCategory || (surface && workType ? `${surface} - ${workType}` : null);
+    if (!name || !computedCategory || !unit || unitPrice === undefined) {
       return NextResponse.json(
         { error: 'Nom, catégorie, unité et prix sont obligatoires' },
         { status: 400 }
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
         userId: session.user.id,
         name,
         description: description || null,
-        serviceCategory,
+        serviceCategory: computedCategory,
         unit,
         unitPrice: parseFloat(unitPrice),
         isActive: isActive ?? true,

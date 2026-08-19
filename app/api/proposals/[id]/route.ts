@@ -18,7 +18,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { status } = body;
+    const { status, reason, details } = body;
 
     if (!['ACCEPTE', 'REFUSE'].includes(status)) {
       return NextResponse.json(
@@ -40,7 +40,14 @@ export async function PUT(
 
     const updated = await prisma.vendorProposal.update({
       where: { id },
-      data: { status },
+      data: {
+        status,
+        ...(status === 'REFUSE' && {
+          feedbackReason: reason || 'AUTRE',
+          clientRejectReason: reason || 'AUTRE',
+          clientRejectDetails: details || null,
+        }),
+      },
     });
 
     return NextResponse.json(updated);

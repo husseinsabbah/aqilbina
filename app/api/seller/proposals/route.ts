@@ -36,6 +36,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     }
 
+    const activeSubscription = await prisma.userAgent.findFirst({
+      where: {
+        userId: session.user.id,
+        OR: [
+          { status: 'TRIAL', trialEndDate: { gt: new Date() } },
+          { status: 'ACTIVE', endDate: { gt: new Date() } },
+        ],
+      },
+    });
+
+    if (!activeSubscription) {
+      return NextResponse.json({
+        error: 'Vous devez activer un abonnement pour soumettre une offre.',
+      }, { status: 403 });
+    }
+
     const body = await request.json();
     const { projectId, productId, quantity, unitPrice, message, deliveryDate, marketingMessage } = body;
 

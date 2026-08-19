@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Check, Loader2, Crown, Store, Building2, Sparkles, AlertCircle } from "lucide-react";
 
-const AGENT_NAME_SUGGESTIONS = [
+const ARTISAN_TRADES = [
   "Carrelage",
   "Plomberie",
   "Électricité",
@@ -23,6 +23,8 @@ const AGENT_NAME_SUGGESTIONS = [
   "Vitrerie",
   "Autre",
 ];
+
+const AGENT_NAME_SUGGESTIONS = ARTISAN_TRADES;
 
 const normalizeSuggestion = (value: string) =>
   value
@@ -174,9 +176,10 @@ export default function AbonnementPage() {
       setShowModal(false);
       // Rediriger vers l'espace approprié
       const role = session?.user?.role;
-      if (role === "vendeur") {
+      const trade = session?.user?.trade;
+      if (role === "vendeur" || trade === "vendeur") {
         router.push("/vendeur");
-      } else if (role === "artisan") {
+      } else if (role === "artisan" || trade === "artisan") {
         router.push("/artisan");
       } else {
         router.push("/");
@@ -276,7 +279,7 @@ export default function AbonnementPage() {
                     onClick={() => handleChoose(agent)}
                     className="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition font-semibold"
                   >
-                    {agent.type === "sur-mesure" ? "Contactez-nous" : "Commencer l'essai"}
+                    {agent.type === "sur-mesure" ? "Contactez-nous" : "Commencer votre essai de 14 jours gratuit"}
                   </button>
                 </div>
               </div>
@@ -342,16 +345,17 @@ export default function AbonnementPage() {
               {Array.from({ length: quantity }, (_, index) => {
                 const value = agentNames[index] || "";
                 const suggestions = getSuggestions(value);
+                const selectedTrade = value === "" ? (selectedAgent.specialty || "Carrelage") : value;
+                const isOtherSelected = selectedTrade === "Autre" || !ARTISAN_TRADES.includes(selectedTrade);
 
                 return (
                   <div key={index} className="relative">
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      {quantity > 1 ? <>Nom de l&apos;agent {index + 1}</> : "Nom de l&apos;agent"}
+                      Quel métier ?
                     </label>
-                    <input
-                      type="text"
-                      value={value}
-                      onFocus={() => setActiveNameInput(index)}
+
+                    <select
+                      value={isOtherSelected ? "Autre" : selectedTrade}
                       onChange={(e) => {
                         const nextValue = e.target.value;
                         setAgentNames((prev) => {
@@ -359,54 +363,32 @@ export default function AbonnementPage() {
                           updated[index] = nextValue;
                           return updated;
                         });
-                        setActiveNameInput(index);
                       }}
-                      onBlur={() => {
-                        window.setTimeout(() => setActiveNameInput((current) => (current === index ? null : current)), 150);
-                      }}
-                      placeholder={selectedAgent.specialty || "Carrelage"}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                    />
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                      {ARTISAN_TRADES.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
 
-                    {activeNameInput === index && suggestions.length > 0 && (
-                      <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
-                        {suggestions.map((option) => (
-                          <button
-                            key={option}
-                            type="button"
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => {
-                              setAgentNames((prev) => {
-                                const updated = [...prev];
-                                updated[index] = option;
-                                return updated;
-                              });
-                              setActiveNameInput(null);
-                            }}
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 text-gray-700"
-                          >
-                            {option}
-                          </button>
-                        ))}
-                        <button
-                          type="button"
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => {
-                            setAgentNames((prev) => {
-                              const updated = [...prev];
-                              updated[index] = "";
-                              return updated;
-                            });
-                            setActiveNameInput(index);
-                          }}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 text-blue-600 border-t border-gray-200"
-                        >
-                          Autre (écrire un nom personnalisé)
-                        </button>
-                      </div>
+                    {isOtherSelected && (
+                      <input
+                        type="text"
+                        value={selectedTrade === "Autre" ? "" : selectedTrade}
+                        onChange={(e) => {
+                          const nextValue = e.target.value.trim();
+                          setAgentNames((prev) => {
+                            const updated = [...prev];
+                            updated[index] = nextValue || "Autre";
+                            return updated;
+                          });
+                        }}
+                        placeholder="Précisez votre métier"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 mt-2 focus:ring-2 focus:ring-blue-500"
+                      />
                     )}
 
-                    {value && getClosestSuggestion(value) && getClosestSuggestion(value) !== value && (
+                    {!isOtherSelected && suggestions.length > 0 && value && getClosestSuggestion(value) && getClosestSuggestion(value) !== value && (
                       <p className="mt-1 text-xs text-blue-600">
                         Suggestion : <span className="font-medium">{getClosestSuggestion(value)}</span>
                       </p>
@@ -432,7 +414,7 @@ export default function AbonnementPage() {
                   Activation...
                 </>
               ) : (
-                "Commencer l&apos;essai gratuit"
+                "Commencer votre essai de 14 jours gratuit"
               )}
             </button>
           </div>

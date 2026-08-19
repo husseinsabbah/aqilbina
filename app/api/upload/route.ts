@@ -22,10 +22,14 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Vérifier le type de fichier
-    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'];
-    if (!validTypes.includes(file.type)) {
+    const validTypes = [
+      'image/jpeg', 'image/png', 'image/webp', 'image/svg+xml',
+      'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo'
+    ];
+    const isSupported = validTypes.includes(file.type) || file.type.startsWith('image/') || file.type.startsWith('video/');
+    if (!isSupported) {
       return NextResponse.json(
-        { error: 'Format non supporté. Utilisez JPG, PNG, WEBP ou SVG.' },
+        { error: 'Format non supporté. Utilisez JPG, PNG, WEBP, SVG, MP4, WEBM ou MOV.' },
         { status: 400 }
       );
     }
@@ -39,8 +43,8 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. Générer un nom unique
-    const ext = path.extname(file.name);
-    const fileName = `logo_${session.user.id}_${Date.now()}${ext}`;
+    const ext = path.extname(file.name) || (file.type.startsWith('video/') ? '.mp4' : '.png');
+    const fileName = `upload_${session.user.id}_${Date.now()}${ext}`;
     const uploadDir = path.join(process.cwd(), 'public', 'uploads');
     const filePath = path.join(uploadDir, fileName);
 

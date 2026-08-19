@@ -132,7 +132,7 @@ export default function ProjetsPage() {
         splashHeight: "",
         renovationType: "",
       });
-      router.push(`/projets/${data.id}`);
+      router.push(`/dashboard/projets/${data.id}`);
     } catch (error) {
       console.error("Erreur lors de la création :", error);
       alert("Erreur lors de la création du projet");
@@ -209,7 +209,7 @@ export default function ProjetsPage() {
                       <td className="px-6 py-4 text-sm text-gray-600">{new Date(p.createdAt).toLocaleDateString()}</td>
                       <td className="px-6 py-4 text-sm text-right">
                         <Link
-                          href={`/projets/${p.id}`}
+                          href={`/dashboard/projets/${p.id}`}
                           className="text-blue-600 hover:text-blue-800 mr-2 inline-block"
                         >
                           <Eye className="w-4 h-4 inline" />

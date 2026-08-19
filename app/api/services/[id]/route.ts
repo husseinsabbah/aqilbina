@@ -14,12 +14,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (!existing || existing.userId !== session.user.id) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
     }
+    const { surface, workType } = body;
+    const computedCategory = body.serviceCategory || (surface && workType ? `${surface} - ${workType}` : existing.serviceCategory);
     const updated = await prisma.service.update({
       where: { id },
       data: {
         name: body.name ?? existing.name,
         description: body.description !== undefined ? body.description : existing.description,
-        serviceCategory: body.serviceCategory ?? existing.serviceCategory,
+        serviceCategory: computedCategory,
         unit: body.unit ?? existing.unit,
         unitPrice: body.unitPrice !== undefined ? parseFloat(body.unitPrice) : existing.unitPrice,
         isActive: body.isActive !== undefined ? body.isActive : existing.isActive,

@@ -93,9 +93,33 @@ export default function AbonnementPage() {
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [agentNames, setAgentNames] = useState<string[]>([""]);
-  const [activeNameInput, setActiveNameInput] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showModal, setShowModal] = useState(false);
+
+  const profileRole = (() => {
+    const currentRole = (session?.user?.role || session?.user?.trade || "artisan").toLowerCase();
+    if (currentRole.includes("vendeur")) return "vendeur";
+    if (currentRole.includes("promoteur")) return "promoteur";
+    return "artisan";
+  })();
+
+  const isSupervisorAgent = (agent: Agent) =>
+    agent.specialty?.toLowerCase() === "superviseur" || /superviseur/i.test(agent.name || "");
+
+  const roleHeadingMap: Record<string, { title: string; subtitle: string }> = {
+    artisan: {
+      title: "Choisissez votre agent IA artisan",
+      subtitle: "Des assistants spécialisés pour vos chantiers, vos devis et votre suivi de projets.",
+    },
+    vendeur: {
+      title: "Choisissez votre agent IA vendeur",
+      subtitle: "Des outils pour piloter votre catalogue, vos offres et votre prospection commerciale.",
+    },
+    promoteur: {
+      title: "Choisissez votre agent IA promoteur",
+      subtitle: "Un accompagnement pour superviser les projets, les équipes et la coordination de travaux.",
+    },
+  };
 
   useEffect(() => {
     if (status === "loading") return;
@@ -109,7 +133,10 @@ export default function AbonnementPage() {
         const res = await fetch("/api/agents", { credentials: "include" });
         if (!res.ok) throw new Error("Erreur");
         const data = await res.json();
-        setAgents(data.filter((a: Agent) => a.isActive));
+        const filtered = (data as Agent[])
+          .filter((a: Agent) => a.isActive)
+          .filter((a: Agent) => a.type === "artisan" || a.type === "vendeur" || a.type === "societe" || a.type === "sur-mesure");
+        setAgents(filtered);
       } catch {
         setError("Impossible de charger les offres");
       } finally {
@@ -118,13 +145,13 @@ export default function AbonnementPage() {
     };
 
     fetchAgents();
-  }, [session, status, router]);
+  }, [session, status, router, profileRole]);
 
   const handleChoose = (agent: Agent) => {
     setSelectedAgent(agent);
     setQuantity(1);
-    setAgentNames([agent.specialty || "Carrelage"]);
-    setActiveNameInput(0);
+    const fallbackName = agent.specialty || session?.user?.trade || "Vendeur";
+    setAgentNames([fallbackName]);
     setShowModal(true);
   };
 
@@ -134,11 +161,13 @@ export default function AbonnementPage() {
     setAgentNames((prev) => {
       const nextNames = Array.from({ length: safeQuantity }, (_, index) => prev[index]?.trim() || "");
       if (safeQuantity === 1 && !nextNames[0]) {
-        nextNames[0] = selectedAgent?.specialty || "Carrelage";
+        nextNames[0] = selectedAgent?.specialty || session?.user?.trade || "Vendeur";
       }
       return nextNames;
     });
   };
+
+  const requiresRoleSupervisor = quantity > 2;
 
   const handleConfirm = async () => {
     if (!selectedAgent) return;
@@ -146,7 +175,7 @@ export default function AbonnementPage() {
     const fixedNames = Array.from({ length: quantity }, (_, index) => {
       const rawValue = (agentNames[index] || "").trim();
       if (!rawValue) {
-        return selectedAgent.specialty || "Carrelage";
+        return selectedAgent.specialty || session?.user?.trade || "Vendeur";
       }
       return getClosestSuggestion(rawValue) || rawValue;
     });
@@ -177,12 +206,14 @@ export default function AbonnementPage() {
       // Rediriger vers l'espace approprié
       const role = session?.user?.role;
       const trade = session?.user?.trade;
-      if (role === "vendeur" || trade === "vendeur") {
+      if (role === "promoteur" || trade === "promoteur") {
+        router.push("/dashboard");
+      } else if (role === "vendeur" || trade === "vendeur") {
         router.push("/vendeur");
       } else if (role === "artisan" || trade === "artisan") {
         router.push("/artisan");
       } else {
-        router.push("/");
+        router.push("/dashboard");
       }
     } catch (err) {
       setError((err as Error).message);
@@ -203,11 +234,15 @@ export default function AbonnementPage() {
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-12">
+          <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 mb-4">
+            <span className="uppercase tracking-wide">Profil</span>
+            <span>{profileRole}</span>
+          </div>
           <h1 className="text-4xl font-extrabold text-gray-900 sm:text-5xl">
-            🔥 Choisissez votre agent IA
+            🔥 {roleHeadingMap[profileRole].title}
           </h1>
           <p className="mt-4 text-xl text-gray-500 max-w-2xl mx-auto">
-            Des agents spécialisés pour vous accompagner au quotidien.
+            {roleHeadingMap[profileRole].subtitle}
             <span className="block text-blue-600 font-semibold mt-2">
               ✅ 14 jours d&apos;essai gratuit offerts – Aucune carte demandée.
             </span>
@@ -223,7 +258,7 @@ export default function AbonnementPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {agents.map((agent) => {
-            const isPopular = agent.priceMonthly === 99 && agent.type === "societe";
+            const isPopular = profileRole === "promoteur" && agent.type === "societe";
             return (
               <div
                 key={agent.id}
@@ -260,19 +295,19 @@ export default function AbonnementPage() {
                   <ul className="space-y-2 text-sm text-gray-600 mb-6">
                     <li className="flex items-center gap-2">
                       <Check className="w-4 h-4 text-green-500" />
-                      {agent.type === "artisan" ? "5 projets / mois" : agent.type === "vendeur" ? "20 projets / mois" : "Illimité"}
+                      {agent.type === "artisan" ? "5 projets / mois" : agent.type === "vendeur" ? "20 projets / mois" : "Gestion multi-sites"}
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="w-4 h-4 text-green-500" />
-                      {agent.type === "artisan" ? "10 offres / mois" : agent.type === "vendeur" ? "50 offres / mois" : "Illimité"}
+                      {agent.type === "artisan" ? "10 offres / mois" : agent.type === "vendeur" ? "50 offres / mois" : "Suivi des lots et équipes"}
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="w-4 h-4 text-green-500" />
-                      {agent.type === "artisan" ? "IA basique" : agent.type === "vendeur" ? "IA avancée" : "IA Pro"}
+                      {agent.type === "artisan" ? "IA basique" : agent.type === "vendeur" ? "IA avancée" : "IA de coordination"}
                     </li>
                     <li className="flex items-center gap-2">
                       <Check className="w-4 h-4 text-green-500" />
-                      {agent.type === "artisan" ? "Support standard" : agent.type === "vendeur" ? "Support prioritaire" : "Support 24/7"}
+                      {agent.type === "artisan" ? "Support standard" : agent.type === "vendeur" ? "Support prioritaire" : "Support projet 24/7"}
                     </li>
                   </ul>
                   <button
@@ -345,53 +380,73 @@ export default function AbonnementPage() {
               {Array.from({ length: quantity }, (_, index) => {
                 const value = agentNames[index] || "";
                 const suggestions = getSuggestions(value);
-                const selectedTrade = value === "" ? (selectedAgent.specialty || "Carrelage") : value;
+                const isSupervisorSelected = isSupervisorAgent(selectedAgent);
+                const selectedTrade = value === "" ? (selectedAgent.specialty || session?.user?.trade || "Vendeur") : value;
                 const isOtherSelected = selectedTrade === "Autre" || !ARTISAN_TRADES.includes(selectedTrade);
 
                 return (
                   <div key={index} className="relative">
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Quel métier ?
+                      {isSupervisorSelected ? "Nom du superviseur" : "Quel métier ?"}
                     </label>
 
-                    <select
-                      value={isOtherSelected ? "Autre" : selectedTrade}
-                      onChange={(e) => {
-                        const nextValue = e.target.value;
-                        setAgentNames((prev) => {
-                          const updated = [...prev];
-                          updated[index] = nextValue;
-                          return updated;
-                        });
-                      }}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-white"
-                    >
-                      {ARTISAN_TRADES.map((option) => (
-                        <option key={option} value={option}>{option}</option>
-                      ))}
-                    </select>
-
-                    {isOtherSelected && (
+                    {isSupervisorSelected ? (
                       <input
                         type="text"
-                        value={selectedTrade === "Autre" ? "" : selectedTrade}
+                        value={value || selectedAgent.name}
                         onChange={(e) => {
                           const nextValue = e.target.value.trim();
                           setAgentNames((prev) => {
                             const updated = [...prev];
-                            updated[index] = nextValue || "Autre";
+                            updated[index] = nextValue || selectedAgent.name;
                             return updated;
                           });
                         }}
-                        placeholder="Précisez votre métier"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 mt-2 focus:ring-2 focus:ring-blue-500"
+                        placeholder="Ex : Superviseur Vendeur 1"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
                       />
-                    )}
+                    ) : (
+                      <>
+                        <select
+                          value={isOtherSelected ? "Autre" : selectedTrade}
+                          onChange={(e) => {
+                            const nextValue = e.target.value;
+                            setAgentNames((prev) => {
+                              const updated = [...prev];
+                              updated[index] = nextValue;
+                              return updated;
+                            });
+                          }}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-white"
+                        >
+                          {ARTISAN_TRADES.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
 
-                    {!isOtherSelected && suggestions.length > 0 && value && getClosestSuggestion(value) && getClosestSuggestion(value) !== value && (
-                      <p className="mt-1 text-xs text-blue-600">
-                        Suggestion : <span className="font-medium">{getClosestSuggestion(value)}</span>
-                      </p>
+                        {isOtherSelected && (
+                          <input
+                            type="text"
+                            value={selectedTrade === "Autre" ? "" : selectedTrade}
+                            onChange={(e) => {
+                              const nextValue = e.target.value.trim();
+                              setAgentNames((prev) => {
+                                const updated = [...prev];
+                                updated[index] = nextValue || "Autre";
+                                return updated;
+                              });
+                            }}
+                            placeholder="Précisez votre métier"
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 mt-2 focus:ring-2 focus:ring-blue-500"
+                          />
+                        )}
+
+                        {!isOtherSelected && suggestions.length > 0 && value && getClosestSuggestion(value) && getClosestSuggestion(value) !== value && (
+                          <p className="mt-1 text-xs text-blue-600">
+                            Suggestion : <span className="font-medium">{getClosestSuggestion(value)}</span>
+                          </p>
+                        )}
+                      </>
                     )}
                   </div>
                 );
@@ -401,6 +456,11 @@ export default function AbonnementPage() {
             <div className="bg-gray-50 rounded-lg p-3 mb-4 text-sm">
               <p className="font-semibold">Résumé</p>
               <p>Abonnement : {selectedAgent.priceMonthly * quantity}€ / mois</p>
+              {requiresRoleSupervisor && (
+                <p className="mt-1 text-amber-700 font-medium">
+                  ⚠️ Si votre équipe dépasse 2 agents spécialisés d’une même famille, un superviseur associé est ajouté automatiquement.
+                </p>
+              )}
               <p className="text-green-600">✅ 14 jours d&apos;essai offerts</p>
             </div>
             <button

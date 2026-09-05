@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { ShoppingCart, Check, X, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { ShoppingCart, Check, Loader2 } from "lucide-react";
 
 type Suggestion = {
   area: string;

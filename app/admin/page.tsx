@@ -34,11 +34,33 @@ type AuditEntry = {
   } | null;
 };
 
+type PartnershipReview = {
+  id: string;
+  status: string;
+  targetRole: string;
+  evaluationStatus: string;
+  notes?: string | null;
+  cancellationReasons?: string | null;
+  cancellationDetails?: string | null;
+  createdAt: string;
+  initiator: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  targetUser: {
+    id: string;
+    name: string;
+    email: string;
+  };
+};
+
 export default function AdminPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
+  const [partnerships, setPartnerships] = useState<PartnershipReview[]>([]);
   const [newAdmin, setNewAdmin] = useState({ name: '', email: '', password: '', role: 'admin' });
   const [loading, setLoading] = useState(false);
 
@@ -61,9 +83,10 @@ export default function AdminPage() {
     const loadData = async () => {
       setLoading(true);
       try {
-        const [usersRes, auditRes] = await Promise.all([
+        const [usersRes, auditRes, partnershipsRes] = await Promise.all([
           fetch('/api/admin/users', { credentials: 'include' }),
           fetch('/api/admin/audit', { credentials: 'include' }),
+          fetch('/api/admin/partnerships', { credentials: 'include' }),
         ]);
 
         if (usersRes.ok) {
@@ -74,6 +97,11 @@ export default function AdminPage() {
         if (auditRes.ok) {
           const logsData = await auditRes.json();
           setAuditLogs(Array.isArray(logsData) ? logsData : []);
+        }
+
+        if (partnershipsRes.ok) {
+          const partnershipData = await partnershipsRes.json();
+          setPartnerships(Array.isArray(partnershipData) ? partnershipData : []);
         }
       } catch (error) {
         console.error('Erreur chargement admin data:', error);
@@ -99,6 +127,46 @@ export default function AdminPage() {
 
       setUsers((prev) => prev.map((user) => user.id === userId ? { ...user, role: nextRole } : user));
       alert('✅ Rôle mis à jour');
+    } catch (error) {
+      alert('Erreur : ' + (error as Error).message);
+    }
+  };
+
+  const handlePartnershipDecision = async (partnershipId: string, status: 'PENDING' | 'VALIDATED' | 'REJECTED', mode: 'request' | 'cancel' = 'request') => {
+    try {
+      const res = await fetch('/api/admin/partnerships', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ partnershipId, status, mode }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erreur validation partenariat');
+
+      setPartnerships((prev) => prev.map((item) => {
+        if (item.id !== partnershipId) return item;
+
+        const nextStatus = status === 'VALIDATED'
+          ? mode === 'cancel' ? 'CANCELLED' : 'ACTIVE'
+          : status === 'REJECTED'
+            ? mode === 'cancel' ? 'ACTIVE' : 'REJECTED'
+            : 'PENDING';
+
+        return {
+          ...item,
+          evaluationStatus: status,
+          status: nextStatus,
+        };
+      }));
+
+      if (status === 'PENDING') {
+        alert('✅ Décision remise en attente');
+      } else if (mode === 'cancel') {
+        alert(status === 'VALIDATED' ? '✅ Annulation validée' : '⚠️ Annulation rejetée');
+      } else {
+        alert(status === 'VALIDATED' ? '✅ Partenariat validé' : '⚠️ Partenariat rejeté');
+      }
     } catch (error) {
       alert('Erreur : ' + (error as Error).message);
     }
@@ -148,6 +216,12 @@ export default function AdminPage() {
       href: '/parametres',
     },
     {
+      title: 'Partenariats',
+      value: `${partnerships.length} demandes`,
+      icon: Users,
+      href: '/admin',
+    },
+    {
       title: 'Projets',
       value: 'Suivi des projets',
       icon: FolderKanban,
@@ -183,7 +257,7 @@ export default function AdminPage() {
           </button>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-4">
           {adminCards.map(({ title, value, icon: Icon, href }) => (
             <div key={title} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
@@ -270,6 +344,77 @@ export default function AdminPage() {
               )}
             </div>
           </div>
+        </div>
+
+        <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="mb-4 text-lg font-semibold text-slate-900">Validation des demandes de partenariat</h2>
+          {partnerships.length === 0 ? (
+            <p className="text-sm text-slate-500">Aucune demande de partenariat à traiter.</p>
+          ) : (
+            <div className="space-y-4">
+              {partnerships.map((item) => (
+                <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="font-semibold text-slate-900">{item.initiator.name} → {item.targetUser.name}</p>
+                      <p className="text-sm text-slate-600">Profil cible : {item.targetRole} · Évaluation : {item.evaluationStatus}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handlePartnershipDecision(item.id, 'VALIDATED', 'request')}
+                        className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-700"
+                      >
+                        Valider
+                      </button>
+                      <button
+                        onClick={() => handlePartnershipDecision(item.id, 'REJECTED', 'request')}
+                        className="rounded-lg bg-red-600 px-3 py-2 text-xs font-medium text-white hover:bg-red-700"
+                      >
+                        Rejeter
+                      </button>
+                      <button
+                        onClick={() => handlePartnershipDecision(item.id, 'PENDING', 'request')}
+                        className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-medium text-white hover:bg-amber-600"
+                      >
+                        Retour en attente
+                      </button>
+                    </div>
+                  </div>
+
+                  {item.status === 'CANCELLED' && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <span className="rounded bg-red-100 px-2 py-1 text-xs font-medium text-red-700">Annulation demandée</span>
+                      <button
+                        onClick={() => handlePartnershipDecision(item.id, 'VALIDATED', 'cancel')}
+                        className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-700"
+                      >
+                        Accepter annulation
+                      </button>
+                      <button
+                        onClick={() => handlePartnershipDecision(item.id, 'REJECTED', 'cancel')}
+                        className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800"
+                      >
+                        Rejeter annulation
+                      </button>
+                      <button
+                        onClick={() => handlePartnershipDecision(item.id, 'PENDING', 'cancel')}
+                        className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-medium text-white hover:bg-amber-600"
+                      >
+                        Revenir en attente
+                      </button>
+                    </div>
+                  )}
+
+                  {item.cancellationReasons && (
+                    <p className="mt-3 text-sm text-red-700">Raison d’annulation : {item.cancellationReasons}</p>
+                  )}
+                  {item.cancellationDetails && (
+                    <p className="mt-2 text-sm text-slate-600">Détail : {item.cancellationDetails}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

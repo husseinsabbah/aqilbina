@@ -13,6 +13,7 @@ type AnalysisResponse = {
     brand: string | null;
     price: number;
     stock: number;
+    quantity: number;
     justification: string;
   }>;
   recommendedTutorials: Array<{
@@ -24,6 +25,14 @@ type AnalysisResponse = {
   }>;
   questions: string[];
   nextAction: string;
+  recommendedServices?: Array<{
+    name: string;
+    quantity: number;
+    unit: string;
+    unitPrice: number;
+    total: number;
+    justification: string;
+  }>;
 };
 
 const fallbackResponse: AnalysisResponse = {
@@ -42,10 +51,12 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 function buildPrompt({
   project,
   products,
+  services,
   tutorials,
   config,
   history,
   question,
+  isSupervisor,
 }: {
   project: {
     name: string;
@@ -53,6 +64,7 @@ function buildPrompt({
     type?: string | null;
     surface?: number | null;
     budgetEstimate?: number | null;
+    metadata?: Record<string, unknown> | null;
   };
   products: Array<{
     id: string;
@@ -62,6 +74,15 @@ function buildPrompt({
     brand?: string | null;
     salePrice: number;
     stock: number;
+  }>;
+  services: Array<{
+    id: string;
+    name: string;
+    serviceCategory?: string | null;
+    description?: string | null;
+    unit: string;
+    unitPrice: number;
+    applicableProjectTypes?: string | null;
   }>;
   tutorials: Array<{
     id: string;
@@ -79,12 +100,19 @@ function buildPrompt({
   };
   history: Array<{ role: string; content: string }>;
   question?: string;
+  isSupervisor?: boolean;
 }) {
   const productText = products.length
     ? products.map((product) => (
         `- ${product.name} | catégorie: ${product.category} | marque: ${product.brand ?? 'N/A'} | prix: ${product.salePrice} € | stock: ${product.stock} | description: ${product.description ?? 'Aucune description'}`
       )).join('\n')
     : '- Aucun produit disponible dans le catalogue.';
+
+  const serviceText = services.length
+    ? services.map((service) => (
+        `- ${service.name} | catégorie: ${service.serviceCategory ?? 'Prestation'} | unité: ${service.unit} | prix unitaire: ${service.unitPrice} € | types applicables: ${service.applicableProjectTypes ?? 'Non précisé'} | description: ${service.description ?? 'Aucune description'}`
+      )).join('\n')
+    : '- Aucune prestation active configurée pour cet artisan.';
 
   const tutorialText = tutorials.length
     ? tutorials.map((tutorial) => (
@@ -98,8 +126,12 @@ function buildPrompt({
         .join('\n')
     : '- Aucun historique.';
 
+  const metadataText = project.metadata && typeof project.metadata === 'object'
+    ? JSON.stringify(project.metadata, null, 2)
+    : 'Aucune donnée métier supplémentaire.';
+
   return `
-Tu es ${config.role}. Tu dois adopter un ton ${config.tone}.
+Tu es ${config.role}. Tu dois adopter un ton ${config.tone}. ${isSupervisor ? 'Tu agis en mode superviseur IA : tu coordonnes les recommandations, évites les doublons et tu produis un devis cohérent, unifié et prioritaire.' : 'Tu analyses le projet de manière ciblée pour un artisan.'}
 
 Règles de fonctionnement :
 ${config.systemPrompt}
@@ -110,10 +142,13 @@ ${config.rules}
 Tu dois respecter strictement ces contraintes :
 - Tu ne proposes QUE des produits présents dans le catalogue fourni.
 - Tu n’inventes JAMAIS un prix, un stock, un délai ou une information.
-- Tu restes dans le contexte du projet.
+- Tu restes dans le contexte du projet et de la spécialité artisanale.
+- Tu dois tenir compte des dimensions / surface / métrés du projet.
+- Tu dois proposer des produits et quantités cohérents avec les prestations artisanales et les dimensions.
 - Si une information manque, tu poses une question.
 - Tu réponds uniquement en JSON valide.
 - Tu dois renvoyer exactement ces clés : summary, recommendedProducts, recommendedTutorials, questions, nextAction.
+- Le champ recommendedProducts doit inclure productId, name, brand, price, stock, quantity, justification.
 
 Contexte du projet :
 - nom: ${project.name}
@@ -121,9 +156,13 @@ Contexte du projet :
 - surface: ${project.surface ?? 'Non renseignée'}
 - budget estimé: ${project.budgetEstimate ?? 'Non renseigné'} €
 - description: ${project.description ?? 'Aucune description'}
+- métadonnées: ${metadataText}
 - question supplémentaire: ${question ?? 'Aucune'}
 
-Catalogue du vendeur :
+Prestations artisanales disponibles :
+${serviceText}
+
+Catalogue produit disponible :
 ${productText}
 
 Tutoriels disponibles :
@@ -142,6 +181,7 @@ Réponse attendue :
       "brand": "marque ou null",
       "price": 0,
       "stock": 0,
+      "quantity": 1,
       "justification": "explication courte"
     }
   ],
@@ -177,6 +217,7 @@ function normalizeResponse(raw: unknown): AnalysisResponse | null {
           const brand = typeof p.brand === 'string' ? p.brand : null;
           const price = typeof p.price === 'number' ? p.price : Number(p.price ?? 0);
           const stock = typeof p.stock === 'number' ? p.stock : Number(p.stock ?? 0);
+          const quantity = typeof p.quantity === 'number' ? p.quantity : Number(p.quantity ?? 1);
           const justification = typeof p.justification === 'string' ? p.justification : '';
 
           if (!productId || !name) return null;
@@ -187,6 +228,7 @@ function normalizeResponse(raw: unknown): AnalysisResponse | null {
             brand,
             price: Number.isFinite(price) ? price : 0,
             stock: Number.isFinite(stock) ? stock : 0,
+            quantity: Number.isFinite(quantity) ? Math.max(1, quantity) : 1,
             justification,
           };
         })
@@ -196,6 +238,7 @@ function normalizeResponse(raw: unknown): AnalysisResponse | null {
           brand: string | null;
           price: number;
           stock: number;
+          quantity: number;
           justification: string;
         }>
     : [];
@@ -284,17 +327,26 @@ export async function POST(request: NextRequest) {
 
     const project = await prisma.project.findUnique({
       where: { id: projectId },
+      include: {
+        recipients: {
+          where: { professionalId: session.user.id },
+          select: { id: true },
+        },
+      },
     });
 
     if (!project) {
       return NextResponse.json({ error: 'Projet introuvable' }, { status: 404 });
     }
 
-    if (project.userId !== session.user.id) {
+    const isOwner = project.userId === session.user.id;
+    const isRecipient = project.recipients.length > 0;
+
+    if (!isOwner && !isRecipient) {
       return NextResponse.json({ error: 'Accès interdit' }, { status: 403 });
     }
 
-    const activeUserAgent = await prisma.userAgent.findFirst({
+    const activeUserAgents = await prisma.userAgent.findMany({
       where: {
         userId: session.user.id,
         status: { in: ['TRIAL', 'ACTIVE'] },
@@ -303,14 +355,34 @@ export async function POST(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
     });
 
-    if (!activeUserAgent) {
-      return NextResponse.json({ error: 'Aucun agent actif pour ce vendeur' }, { status: 403 });
+    const selectedUserAgent = activeUserAgents[0] ?? null;
+
+    if (!selectedUserAgent) {
+      return NextResponse.json({ error: 'Aucun agent actif pour cet utilisateur' }, { status: 403 });
     }
+
+    const vendorSpecializedAgents = activeUserAgents.filter(
+      (userAgent) =>
+        userAgent.agent.type === 'vendeur' &&
+        !['superviseur', 'supervision', 'coordination', 'gestion'].includes(
+          (userAgent.agent.specialty ?? '').toLowerCase().trim()
+        )
+    );
+
+    const hasVendorSupervisor = activeUserAgents.some(
+      (userAgent) =>
+        userAgent.agent.type === 'vendeur' &&
+        ['superviseur', 'supervision', 'coordination', 'gestion'].includes(
+          (userAgent.agent.specialty ?? '').toLowerCase().trim()
+        )
+    );
+
+    const isSupervisorMode = hasVendorSupervisor || vendorSpecializedAgents.length > 2;
 
     let config = await prisma.assistantConfig.findFirst({
       where: {
         userId: session.user.id,
-        agentId: activeUserAgent.agentId,
+        agentId: selectedUserAgent.agentId,
         isActive: true,
       },
     });
@@ -319,14 +391,14 @@ export async function POST(request: NextRequest) {
       config = await prisma.assistantConfig.create({
         data: {
           userId: session.user.id,
-          agentId: activeUserAgent.agentId,
-          name: `${activeUserAgent.agent.name} Assistant`,
-          role: 'Assistant vendeur expert',
-          tone: 'professionnel, utile, précis',
+          agentId: selectedUserAgent.agentId,
+          name: `${selectedUserAgent.agent.name} Assistant`,
+          role: isSupervisorMode ? 'Superviseur IA de devis' : 'Assistant expert métier',
+          tone: 'professionnel, utile, précis, orienté devis',
           systemPrompt:
-            'Tu es un assistant expert pour aider un vendeur à recommander des produits. Tu ne proposes que des produits du catalogue du vendeur et tu restes dans le contexte du projet.',
+            'Tu es un assistant expert qui aide un artisan à préparer un devis réaliste à partir des infos du projet, des dimensions et des services du professionnel. Tu ne proposes que des produits du catalogue du professionnel et tu restes dans le contexte du projet.',
           rules:
-            'Tu rejoutes les produits hors catalogue. Tu ne donnes pas des prix ou stocks inventés. Si une information manque, pose une question. Réponds uniquement en JSON.',
+            'Tu rejettes les produits hors catalogue. Tu ne donnes pas des prix ou stocks inventés. Tu calcules les quantités à partir des dimensions et des prestations. Si une information manque, pose une question. Réponds uniquement en JSON.',
           isActive: true,
         },
       });
@@ -334,6 +406,11 @@ export async function POST(request: NextRequest) {
 
     const products = await prisma.product.findMany({
       where: { userId: session.user.id },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const services = await prisma.service.findMany({
+      where: { userId: session.user.id, isActive: true },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -355,6 +432,7 @@ export async function POST(request: NextRequest) {
         type: project.type,
         surface: project.surface,
         budgetEstimate: project.budgetEstimate,
+        metadata: project.metadata as Record<string, unknown> | null,
       },
       products: products.map((product) => ({
         id: product.id,
@@ -364,6 +442,15 @@ export async function POST(request: NextRequest) {
         brand: product.brand,
         salePrice: product.salePrice,
         stock: product.stock,
+      })),
+      services: services.map((service) => ({
+        id: service.id,
+        name: service.name,
+        serviceCategory: service.serviceCategory,
+        description: service.description,
+        unit: service.unit,
+        unitPrice: service.unitPrice,
+        applicableProjectTypes: service.applicableProjectTypes,
       })),
       tutorials: tutorials.map((tutorial) => ({
         id: tutorial.id,
@@ -384,6 +471,7 @@ export async function POST(request: NextRequest) {
         content: message.content,
       })),
       question,
+      isSupervisor: isSupervisorMode,
     });
 
     let responseText = '';
@@ -415,7 +503,7 @@ export async function POST(request: NextRequest) {
         data: {
           projectId,
           userId: session.user.id,
-          agentId: activeUserAgent.agentId,
+          agentId: selectedUserAgent.agentId,
           role: 'user',
           content: question,
           context: JSON.stringify({ projectName: project.name, projectType: project.type }),
@@ -427,7 +515,7 @@ export async function POST(request: NextRequest) {
       data: {
         projectId,
         userId: session.user.id,
-        agentId: activeUserAgent.agentId,
+        agentId: selectedUserAgent.agentId,
         role: 'assistant',
         content: JSON.stringify(parsedResponse),
         context: JSON.stringify({ projectName: project.name, projectType: project.type }),
@@ -436,7 +524,7 @@ export async function POST(request: NextRequest) {
 
     await prisma.assistantLog.create({
       data: {
-        agentId: activeUserAgent.agentId,
+        agentId: selectedUserAgent.agentId,
         projectId,
         userId: session.user.id,
         action: 'analyze',

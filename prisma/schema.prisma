@@ -8,402 +8,535 @@ datasource db {
 }
 
 model User {
-  id            String   @id @default(cuid())
-  name          String
-  email         String   @unique
-  password      String
-  role          String   @default("user")
-  trade         String?
-  companyName   String?
-  phone         String?
-  address       String?
-  city          String?
-  description   String?
-  website       String?
-  imageUrl      String?
-  brandColor    String?  @default("#1E40AF")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                       String              @id @default(cuid())
+  name                     String
+  email                    String              @unique
+  password                 String
+  role                     String              @default("user")
+  trade                    String?
+  companyName              String?
+  phone                    String?
+  address                  String?
+  city                     String?
+  description              String?
+  website                  String?
+  imageUrl                 String?
+  brandColor               String?             @default("#1E40AF")
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+  certificationAnswers     String?
+  certificationLabel       String?
+  certificationScore       Int?                @default(0)
+  firstName                String?
+  lastName                 String?
+  age                      Int?
+  targetActions            AdminAuditLog[]     @relation("AdminAuditAsTarget")
+  adminActions             AdminAuditLog[]     @relation("AdminAuditAsAdmin")
+  validatedRecommendations AiRecommendation[]  @relation("RecommendationValidatedBy")
+  createdRecommendations   AiRecommendation[]  @relation("RecommendationCreatedBy")
+  assistantConfigs         AssistantConfig[]
+  assistantLogs            AssistantLog[]
+  catalogs                 Catalog[]
+  chatMessages             ChatMessage[]
+  notifications            Notification[]
+  offerComparisons         OfferComparison[]
+  reviewedPartnerships     Partnership[]       @relation("PartnershipReviewedByAdmin")
+  partnershipTargeted      Partnership[]       @relation("PartnershipTarget")
+  partnershipInitiated     Partnership[]       @relation("PartnershipInitiator")
+  products                 Product[]
+  projects                 Project[]
+  projectRecipients        ProjectRecipient[]
+  projectAccesses          ProjectTeamAccess[]
+  sellerListings           SellerListing[]
+  services                 Service[]
+  subscriptions            Subscription[]
+  ownedTeams               Team[]              @relation("TeamOwner")
+  teamAgents               TeamAgent[]         @relation("TeamAgentAssignedBy")
+  teamMemberships          TeamMember[]
+  userAgents               UserAgent[]
+  userTutorials            UserTutorial[]
+  proposals                VendorProposal[]
+  workflows                Workflow[]
+  workflowActions          WorkflowAction[]
+}
 
-  // Relations
-  products      Product[]
-  services      Service[]
-  projects      Project[]
-  proposals     VendorProposal[]
-  sellerListings SellerListing[]
-  notifications Notification[]
-  userAgents    UserAgent[]
-  subscriptions Subscription[]
-  workflows     Workflow[]
-  workflowActions WorkflowAction[]
-  catalogs      Catalog[]
-  offerComparisons OfferComparison[]
-
-  assistantConfigs AssistantConfig[]
-  assistantLogs    AssistantLog[]
-  chatMessages     ChatMessage[]
-  userTutorials    UserTutorial[]
-
-  adminActions     AdminAuditLog[] @relation("AdminAuditAsAdmin")
-  targetActions    AdminAuditLog[] @relation("AdminAuditAsTarget")
+model Partnership {
+  id                  String   @id @default(cuid())
+  initiatorId         String
+  targetUserId        String
+  targetRole          String
+  status              String   @default("PENDING")
+  evaluationStatus    String   @default("PENDING")
+  cancellationReasons String?
+  cancellationDetails String?
+  notes               String?
+  reviewedByAdminId   String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  reviewedByAdmin     User?    @relation("PartnershipReviewedByAdmin", fields: [reviewedByAdminId], references: [id])
+  targetUser          User     @relation("PartnershipTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+  initiator           User     @relation("PartnershipInitiator", fields: [initiatorId], references: [id], onDelete: Cascade)
 }
 
 model Agent {
-  id          String   @id @default(cuid())
-  name        String
-  type        String   // artisan, vendeur, societe, sur-mesure
-  specialty   String?  // matériel, quincaillerie, carrelage, etc.
-  description String?
-  priceMonthly Float   @default(0)
-  priceYearly  Float   @default(0)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  userAgents  UserAgent[]
-  subscriptions Subscription[] // relation inverse
-  workflows   Workflow[]       // relation inverse
-
-  assistantConfigs AssistantConfig[]
-  assistantLogs    AssistantLog[]
-  chatMessages     ChatMessage[]
+  id                String             @id @default(cuid())
+  name              String
+  type              String
+  specialty         String?
+  description       String?
+  priceMonthly      Float              @default(0)
+  priceYearly       Float              @default(0)
+  isActive          Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  aiRecommendations AiRecommendation[]
+  assistantConfigs  AssistantConfig[]
+  assistantLogs     AssistantLog[]
+  chatMessages      ChatMessage[]
+  subscriptions     Subscription[]
+  userAgents        UserAgent[]
+  workflows         Workflow[]
 }
 
 model UserAgent {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  agentId     String
-  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
-
-  customName  String?
-  status      String   @default("PENDING") // PENDING, TRIAL, ACTIVE, CANCELLED, EXPIRED
-  
-  startDate   DateTime @default(now())
-  endDate     DateTime?
-  trialEndDate DateTime?
-  cancelledAt DateTime?
-  graceEndAt  DateTime?
-
-  autoRenew   Boolean  @default(false)
+  id                   String      @id @default(cuid())
+  userId               String
+  agentId              String
+  status               String      @default("PENDING")
+  startDate            DateTime    @default(now())
+  endDate              DateTime?
+  trialEndDate         DateTime?
+  cancelledAt          DateTime?
+  graceEndAt           DateTime?
+  autoRenew            Boolean     @default(false)
   stripeSubscriptionId String?
   stripeCustomerId     String?
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+  customName           String?
+  teamAssignments      TeamAgent[] @relation("TeamAgentUserAgent")
+  agent                Agent       @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  user                 User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, agentId, customName], name: "userId_agentId_customName")
 }
 
 model Catalog {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   name        String
   description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   products    Product[]
 
   @@unique([userId, name])
 }
 
 model Product {
-  id            String   @id @default(cuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name          String
-  description   String?
-  category      String
-  brand         String?
-  purchasePrice Float
-  salePrice     Float
-  stock         Int      @default(0)
-  reservedStock Int      @default(0)
-  tvaRate       Float    @default(20.0)
-  imageUrl      String?
-  catalogId     String
-  catalog       Catalog  @relation(fields: [catalogId], references: [id], onDelete: Cascade)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  projectItems   ProjectItem[]
+  id              String           @id @default(cuid())
+  userId          String
+  name            String
+  description     String?
+  category        String
+  brand           String?
+  purchasePrice   Float
+  salePrice       Float
+  stock           Int              @default(0)
+  reservedStock   Int              @default(0)
+  tvaRate         Float            @default(20.0)
+  imageUrl        String?
+  catalogId       String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  catalog         Catalog          @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectItems    ProjectItem[]
+  sellerListings  SellerListing[]
   vendorProposals VendorProposal[]
-  sellerListings SellerListing[]
 }
 
 model Service {
-  id              String   @id @default(cuid())
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name            String
-  description     String?
-  serviceCategory String   @default("prestation")
-  unit            String   @default("m²")
-  unitPrice       Float
-  isActive        Boolean  @default(true)
-  isDefault       Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  projectItems    ProjectItem[]
+  id                     String        @id @default(cuid())
+  userId                 String
+  name                   String
+  description            String?
+  serviceCategory        String        @default("prestation")
+  unit                   String        @default("m²")
+  unitPrice              Float
+  isActive               Boolean       @default(true)
+  isDefault              Boolean       @default(false)
+  applicableProjectTypes String?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+  projectItems           ProjectItem[]
+  user                   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Project {
-  id                    String   @id @default(cuid())
-  userId                String
-  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name                  String
-  description           String?
-  type                  String?
-  surface               Float?
-  budgetEstimate        Float?
-  clientBudgetMax       Float?
-  status                String   @default("BROUILLON")
-  clientName            String?
-  clientPhone           String?
-  clientEmail           String?
-  clientAddress         String?
-  clientFeedbackStatus  String?  @default("PENDING")
-  clientFeedbackMessage String?
-  clientRejectReason    String?
-  clientRejectDetails   String?
-  sharePublicUrl        String?
-  startDate             DateTime?
-  endDate               DateTime?
-  paymentNotes          String?
-  attachmentUrl         String?
-  projectProgressMedia  String?
-  portfolioMedia        String?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                        String              @id @default(cuid())
+  userId                    String
+  name                      String
+  description               String?
+  type                      String?
+  surface                   Float?
+  budgetEstimate            Float?
+  status                    String              @default("BROUILLON")
+  clientName                String?
+  clientPhone               String?
+  clientEmail               String?
+  clientAddress             String?
+  startDate                 DateTime?
+  endDate                   DateTime?
+  paymentNotes              String?
+  attachmentUrl             String?
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
+  clientFeedbackMessage     String?
+  clientFeedbackStatus      String?             @default("PENDING")
+  clientRejectDetails       String?
+  clientRejectReason        String?
+  portfolioMedia            String?
+  projectProgressMedia      String?
+  sharePublicUrl            String?
+  clientBudgetMax           Float?
+  portfolioRating           Int?
+  portfolioReview           String?
+  depositAmount             Float?
+  depositPercent            Float?
+  depositProofUrl           String?
+  depositValidated          Boolean?            @default(false)
+  projectAccessAttempts     Int?                @default(0)
+  projectAccessLastUsedAt   DateTime?
+  projectAccessPinExpiresAt DateTime?
+  projectAccessPin          String?
+  projectAccessPinHash      String?
+  projectAccessPinSentAt    DateTime?
+  source                    String              @default("web")
+  // 👇 Supprimez "selectedTrades String[]" si présent
+  metadata                  Json?               // <-- Stocke selectedTrades, workType, details, etc.
+desiredStartDate DateTime?
+  desiredEndDate   DateTime?
 
-  items           ProjectItem[]
-  vendorProposals VendorProposal[]
-  estimates       ProjectEstimate[]
-  steps           ProjectStep[]
-  comparisons     OfferComparison[]
-  chatMessages    ChatMessage[]
-  userTutorials   UserTutorial[]
+  // Relations
+  user                      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  aiRecommendations         AiRecommendation[]
+  chatMessages              ChatMessage[]
+  comparisons               OfferComparison[]
+  estimates                 ProjectEstimate[]
+  items                     ProjectItem[]
+  recipients                ProjectRecipient[]
+  steps                     ProjectStep[]
+  teamAccesses              ProjectTeamAccess[]
+  userTutorials             UserTutorial[]
+  vendorProposals           VendorProposal[]
+}
+
+model Team {
+  id              String              @id @default(cuid())
+  ownerId         String
+  name            String
+  specialty       String?
+  isActive        Boolean             @default(true)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  projectAccesses ProjectTeamAccess[]
+  owner           User                @relation("TeamOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  agents          TeamAgent[]
+  members         TeamMember[]
+
+  @@unique([ownerId, name])
+  @@index([ownerId, isActive])
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  teamId    String
+  userId    String
+  role      String   @default("MEMBER")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId, isActive])
+}
+
+model TeamAgent {
+  id           String    @id @default(cuid())
+  teamId       String
+  userAgentId  String
+  assignedById String
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  assignedBy   User      @relation("TeamAgentAssignedBy", fields: [assignedById], references: [id], onDelete: Cascade)
+  userAgent    UserAgent @relation("TeamAgentUserAgent", fields: [userAgentId], references: [id], onDelete: Cascade)
+  team         Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userAgentId])
+  @@index([userAgentId, isActive])
+}
+
+model ProjectTeamAccess {
+  id          String   @id @default(cuid())
+  projectId   String
+  teamId      String
+  grantedById String
+  permission  String   @default("READ")
+  createdAt   DateTime @default(now())
+  grantedBy   User     @relation(fields: [grantedById], references: [id], onDelete: Cascade)
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, teamId])
+  @@index([teamId, permission])
+}
+
+model AiRecommendation {
+  id                String    @id @default(cuid())
+  projectId         String
+  agentId           String
+  createdByUserId   String
+  validatedByUserId String?
+  category          String
+  content           String
+  sourceContext     String?
+  status            String    @default("PENDING")
+  validationNote    String?
+  createdAt         DateTime  @default(now())
+  validatedAt       DateTime?
+  updatedAt         DateTime  @updatedAt
+  validatedByUser   User?     @relation("RecommendationValidatedBy", fields: [validatedByUserId], references: [id])
+  createdByUser     User      @relation("RecommendationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  agent             Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  project           Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, status])
+  @@index([agentId, createdAt])
+}
+
+model ProjectRecipient {
+  id             String   @id @default(cuid())
+  projectId      String
+  professionalId String
+  trade          String
+  status         String   @default("INVITE")
+  message        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  professional   User     @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, professionalId])
+  @@index([professionalId, status])
 }
 
 model ProjectEstimate {
-  id          String   @id @default(cuid())
-  projectId   String
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  material    String
-  quantity    Float
-  unit        String
-  priceUnit   Float?
-  totalPrice  Float?
-  provider    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  projectId  String
+  material   String
+  quantity   Float
+  unit       String
+  priceUnit  Float?
+  totalPrice Float?
+  provider   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model ProjectStep {
-  id          String   @id @default(cuid())
-  projectId   String
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  title       String
-  description String?
-  order       Int
+  id           String   @id @default(cuid())
+  projectId    String
+  title        String
+  description  String?
+  order        Int
   durationDays Int?
-  isCompleted Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isCompleted  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model OfferComparison {
-  id          String   @id @default(cuid())
-  projectId   String
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  vendorId    String
-  vendor      User     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  totalPrice  Float
+  id           String   @id @default(cuid())
+  projectId    String
+  vendorId     String
+  totalPrice   Float
   deliveryDays Int?
-  products    String
-  score       Float?
-  isSelected  Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  products     String
+  score        Float?
+  isSelected   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  vendor       User     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model ProjectItem {
-  id              String   @id @default(cuid())
-  projectId       String
-  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  productId       String?
-  product         Product? @relation(fields: [productId], references: [id])
-  serviceId       String?
-  service         Service? @relation(fields: [serviceId], references: [id])
-  quantity        Float
+  id                String   @id @default(cuid())
+  projectId         String
+  productId         String?
+  serviceId         String?
+  quantity          Float
   unitPriceHtAtSale Float
-  tvaRate         Float    @default(20.0)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  tvaRate           Float    @default(20.0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  service           Service? @relation(fields: [serviceId], references: [id])
+  product           Product? @relation(fields: [productId], references: [id])
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model VendorProposal {
-  id              String   @id @default(cuid())
-  projectId       String
-  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  productId       String
-  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  quantity        Float
-  unitPrice       Float
-  message         String?
-  status          String   @default("EN_ATTENTE")
-  marketingMessage String?
-  deliveryDate    DateTime?
-  expirationDate  DateTime?
-  feedbackReason  String?
-  clientRejectReason String?
+  id                  String    @id @default(cuid())
+  projectId           String
+  productId           String
+  userId              String
+  quantity            Float
+  unitPrice           Float
+  message             String?
+  status              String    @default("EN_ATTENTE")
+  marketingMessage    String?
+  deliveryDate        DateTime?
+  expirationDate      DateTime?
+  feedbackReason      String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
   clientRejectDetails String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  clientRejectReason  String?
+  viewedAt            DateTime?
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product             Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  project             Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model SellerListing {
-  id            String    @id @default(cuid())
-  productId     String
-  product       Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  userId        String
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  quantity      Float
-  unitPrice     Float
-  description   String?
-  endDate       DateTime?
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id          String    @id @default(cuid())
+  productId   String
+  userId      String
+  quantity    Float
+  unitPrice   Float
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  endDate     DateTime?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
 model AssistantConfig {
-  id          String   @id @default(cuid())
-  agentId     String
-  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  name        String
-  role        String
-  tone        String
+  id           String                   @id @default(cuid())
+  agentId      String
+  userId       String
+  name         String
+  role         String
+  tone         String
   systemPrompt String
-  rules       String
-  isActive    Boolean @default(true)
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  versions    AssistantConfigVersion[]
+  rules        String
+  isActive     Boolean                  @default(true)
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+  user         User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agent        Agent                    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  versions     AssistantConfigVersion[]
 }
 
 model AssistantConfigVersion {
-  id            String   @id @default(cuid())
-  configId      String
-  config        AssistantConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
-
-  version       Int
-  systemPrompt  String
-  role          String
-  tone          String
-  rules         String
-  status        String
-  testedAt      DateTime?
-  createdBy     String
-  createdAt     DateTime @default(now())
+  id           String          @id @default(cuid())
+  configId     String
+  version      Int
+  systemPrompt String
+  role         String
+  tone         String
+  rules        String
+  status       String
+  testedAt     DateTime?
+  createdBy    String
+  createdAt    DateTime        @default(now())
+  config       AssistantConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
 }
 
 model AdminAuditLog {
-  id            String   @id @default(cuid())
-  adminUserId   String
-  adminUser     User     @relation("AdminAuditAsAdmin", fields: [adminUserId], references: [id], onDelete: Cascade)
-
-  targetUserId  String?
-  targetUser    User?    @relation("AdminAuditAsTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
-
-  action        String
-  details       String?
-  metadata      String?
-  createdAt     DateTime @default(now())
+  id           String   @id @default(cuid())
+  adminUserId  String
+  targetUserId String?
+  action       String
+  details      String?
+  metadata     String?
+  createdAt    DateTime @default(now())
+  targetUser   User?    @relation("AdminAuditAsTarget", fields: [targetUserId], references: [id])
+  adminUser    User     @relation("AdminAuditAsAdmin", fields: [adminUserId], references: [id], onDelete: Cascade)
 }
 
 model ChatMessage {
-  id          String   @id @default(cuid())
-  projectId   String
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  agentId     String?
-  agent       Agent?   @relation(fields: [agentId], references: [id], onDelete: SetNull)
-
-  role        String
-  content     String
-  context     String?
-  metadata    String?
-  createdAt   DateTime @default(now())
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  agentId   String?
+  role      String
+  content   String
+  context   String?
+  metadata  String?
+  createdAt DateTime @default(now())
+  agent     Agent?   @relation(fields: [agentId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model AssistantLog {
-  id          String   @id @default(cuid())
-  agentId     String
-  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
-
-  projectId   String?
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  action      String
-  prompt      String?
-  response    String?
-  durationMs  Int
-  tokensUsed  Int?
-  error       String?
-  status      String
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  agentId    String
+  projectId  String?
+  userId     String
+  action     String
+  prompt     String?
+  response   String?
+  durationMs Int
+  tokensUsed Int?
+  error      String?
+  status     String
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agent      Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
 }
 
 model Tutorial {
-  id          String   @id @default(cuid())
-  title       String
-  type        String
-  content     String?
-  url         String?
-  thumbnail   String?
-  description String?
-  keywords    String
-  tags        String?
-  projectType String?
-  difficulty  String?
-  trade       String?
-  source      String?
-  sourceId    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
+  id            String         @id @default(cuid())
+  title         String
+  type          String
+  content       String?
+  url           String?
+  thumbnail     String?
+  description   String?
+  keywords      String
+  tags          String?
+  projectType   String?
+  difficulty    String?
+  trade         String?
+  source        String?
+  sourceId      String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   userTutorials UserTutorial[]
 }
 
 model UserTutorial {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  tutorialId  String
-  tutorial    Tutorial @relation(fields: [tutorialId], references: [id], onDelete: Cascade)
-
-  projectId   String?
-  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-
-  savedAt     DateTime @default(now())
-  sharedAt    DateTime?
-  sharedWith  String?
-  createdAt   DateTime @default(now())
+  id         String    @id @default(cuid())
+  userId     String
+  tutorialId String
+  projectId  String?
+  savedAt    DateTime  @default(now())
+  sharedAt   DateTime?
+  sharedWith String?
+  createdAt  DateTime  @default(now())
+  project    Project?  @relation(fields: [projectId], references: [id])
+  tutorial   Tutorial  @relation(fields: [tutorialId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, tutorialId])
 }
@@ -411,57 +544,56 @@ model UserTutorial {
 model Notification {
   id        String   @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   type      String
   title     String
   message   String
   link      String?
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Subscription {
-  id            String   @id @default(cuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  agentId       String?
-  agent         Agent?   @relation(fields: [agentId], references: [id])
-  stripeId      String?
-  plan          String
-  price         Float
-  status        String   @default("pending")
-  startDate     DateTime @default(now())
-  endDate       DateTime?
-  freeAgentId   String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id          String    @id @default(cuid())
+  userId      String
+  agentId     String?
+  stripeId    String?
+  plan        String
+  price       Float
+  status      String    @default("pending")
+  startDate   DateTime  @default(now())
+  endDate     DateTime?
+  freeAgentId String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  agent       Agent?    @relation(fields: [agentId], references: [id])
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Workflow {
-  id            String   @id @default(cuid())
-  title         String
-  description   String?
-  assignedTo    String
-  assignedUser  User     @relation(fields: [assignedTo], references: [id], onDelete: Cascade)
-  agentId       String?
-  agent         Agent?   @relation(fields: [agentId], references: [id])
-  status        String   @default("PENDING_HUMAN")
-  priority      String   @default("medium")
-  dueDate       DateTime?
-  resolvedAt    DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  actions       WorkflowAction[]
+  id           String           @id @default(cuid())
+  title        String
+  description  String?
+  assignedTo   String
+  agentId      String?
+  status       String           @default("PENDING_HUMAN")
+  priority     String           @default("medium")
+  dueDate      DateTime?
+  resolvedAt   DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  agent        Agent?           @relation(fields: [agentId], references: [id])
+  assignedUser User             @relation(fields: [assignedTo], references: [id], onDelete: Cascade)
+  actions      WorkflowAction[]
 }
 
 model WorkflowAction {
-  id            String   @id @default(cuid())
-  workflowId    String
-  workflow      Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  userId        String
-  user          User     @relation(fields: [userId], references: [id])
-  action        String
-  comment       String?
-  createdAt     DateTime @default(now())
+  id         String   @id @default(cuid())
+  workflowId String
+  userId     String
+  action     String
+  comment    String?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
 }

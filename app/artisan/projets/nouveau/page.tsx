@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, FormEvent } from "react";
+import { useState, useEffect, FormEvent, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Search, X, Loader2 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import { getTradeRules, getWorkTypeLabel } from "@/lib/trade-rules";
 
 type Product = {
   id: string;
@@ -56,24 +57,6 @@ type ProjectItem = {
   surface?: "sol" | "mur";
 };
 
-// Types de projet
-const PROJECT_TYPES = [
-  "Pose de carrelage sol",
-  "Pose de carrelage mur",
-  "Rénovation salle de bain",
-  "Rénovation cuisine",
-  "Terrasse extérieure",
-  "Carrelage piscine",
-  "Carrelage escalier",
-  "Autre",
-];
-
-// Types de chantier
-const WORK_TYPES = [
-  { value: "refresh", label: "🔄 Rafraîchissement (pose sur support existant)" },
-  { value: "renovation", label: "🏗️ Rénovation complète (démolition + préparation)" },
-];
-
 // Produits supplémentaires suggérés selon le type de chantier
 const SUGGESTED_PRODUCTS = {
   refresh: [
@@ -102,8 +85,11 @@ const FALLBACK_SERVICE_PRICES = {
 export default function NouveauProjetPage() {
   const router = useRouter();
   const { data: session } = useSession();
+  const activeTrade = String(session?.user?.trade || "carreleur");
+  const tradeRules = useMemo(() => getTradeRules(activeTrade), [activeTrade]);
+  const projectTypeOptions = tradeRules.projectTypes;
+  const workTypeOptions = tradeRules.workTypes;
 
-  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [hasActiveSubscription, setHasActiveSubscription] = useState(true);
 
@@ -236,10 +222,17 @@ export default function NouveauProjetPage() {
         .replace(/[^a-z0-9]+/g, " ")
         .trim();
 
-    const workKeywords =
-      formData.workType === "refresh"
+    const workTypeLabel = getWorkTypeLabel(activeTrade, formData.workType);
+    const normalizedWorkTypeLabel = normalize(workTypeLabel);
+    const preset = formData.workType === "renovation" ? "renovation" : "refresh";
+    const baseKeywords =
+      preset === "refresh"
         ? ["rafraichissement", "refresh", "relooking", "support existant", "pose sur support", "reprise", "retouche"]
         : ["renovation", "complete", "complet", "demolition", "preparation", "preparatif", "refection"];
+    const workKeywords = Array.from(new Set([
+      ...normalizedWorkTypeLabel.split(" ").filter((word) => word.length > 2),
+      ...baseKeywords,
+    ]));
 
     const pickServiceForSurface = (surface: "sol" | "mur") => {
       const targetWords =
@@ -278,7 +271,7 @@ export default function NouveauProjetPage() {
       name: surface === "sol" ? "Pose de carrelage sol" : "Pose de carrelage mur",
       serviceCategory: surface === "sol" ? "sol" : "mur",
       unit: "m²",
-      unitPrice: FALLBACK_SERVICE_PRICES[formData.workType as keyof typeof FALLBACK_SERVICE_PRICES][surface],
+      unitPrice: FALLBACK_SERVICE_PRICES[preset][surface],
       isActive: true,
     });
 
@@ -299,7 +292,7 @@ export default function NouveauProjetPage() {
       setMurService(null);
       setMurUnitPrice(0);
     }
-  }, [formData.workType, services, surfaceSol, surfaceMurs]);
+  }, [activeTrade, formData.workType, services, surfaceSol, surfaceMurs]);
 
   // ===== Produits suggérés =====
   useEffect(() => {
@@ -308,7 +301,8 @@ export default function NouveauProjetPage() {
       return;
     }
 
-    const suggestions = SUGGESTED_PRODUCTS[formData.workType as keyof typeof SUGGESTED_PRODUCTS] || [];
+    const preset = formData.workType === "renovation" ? "renovation" : "refresh";
+    const suggestions = SUGGESTED_PRODUCTS[preset] || [];
     const foundProducts: SelectedProduct[] = [];
 
     suggestions.forEach((name) => {
@@ -500,7 +494,7 @@ export default function NouveauProjetPage() {
     const effectiveSolService = solService || (surfaceSol > 0 && formData.workType ? {
       id: `fallback-sol`,
       name: 'Pose de carrelage sol',
-      unitPrice: FALLBACK_SERVICE_PRICES[formData.workType as keyof typeof FALLBACK_SERVICE_PRICES]?.sol ?? 32,
+      unitPrice: FALLBACK_SERVICE_PRICES[formData.workType === "renovation" ? "renovation" : "refresh"]?.sol ?? 32,
     } : null);
 
     if (surfaceSol > 0 && effectiveSolService) {
@@ -518,7 +512,7 @@ export default function NouveauProjetPage() {
     const effectiveMurService = murService || (surfaceMurs > 0 && formData.workType ? {
       id: `fallback-mur`,
       name: 'Pose de carrelage mur',
-      unitPrice: FALLBACK_SERVICE_PRICES[formData.workType as keyof typeof FALLBACK_SERVICE_PRICES]?.mur ?? 35,
+      unitPrice: FALLBACK_SERVICE_PRICES[formData.workType === "renovation" ? "renovation" : "refresh"]?.mur ?? 35,
     } : null);
 
     if (surfaceMurs > 0 && effectiveMurService) {
@@ -538,6 +532,13 @@ export default function NouveauProjetPage() {
   // ===== SOUMISSION =====
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+
+    if (!hasActiveSubscription) {
+      alert('Vous devez souscrire à un agent actif pour créer un projet.');
+      router.push('/abonnement');
+      return;
+    }
+
     if (!formData.name.trim()) {
       alert("Veuillez donner un nom au projet.");
       return;
@@ -594,7 +595,6 @@ export default function NouveauProjetPage() {
         const err = await res.json();
         throw new Error(err.error || "Erreur");
       }
-      const data = await res.json();
       alert(`✅ Projet "${formData.name}" créé avec succès !`);
       router.push("/artisan");
     } catch (error) {
@@ -635,7 +635,7 @@ export default function NouveauProjetPage() {
                   className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Sélectionner un type...</option>
-                  {PROJECT_TYPES.map((type) => (
+                  {projectTypeOptions.map((type) => (
                     <option key={type} value={type}>{type}</option>
                   ))}
                 </select>
@@ -649,7 +649,7 @@ export default function NouveauProjetPage() {
                   required
                 >
                   <option value="">Sélectionner...</option>
-                  {WORK_TYPES.map((wt) => (
+                  {workTypeOptions.map((wt) => (
                     <option key={wt.value} value={wt.value}>{wt.label}</option>
                   ))}
                 </select>
@@ -1136,7 +1136,7 @@ export default function NouveauProjetPage() {
                 disabled={submitting}
                 className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2"
               >
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Créer le projet"}
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : hasActiveSubscription ? 'Créer le projet' : 'Souscrire un agent pour créer'}
               </button>
             </div>
           </form>

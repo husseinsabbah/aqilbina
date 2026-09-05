@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     }
     const body = await request.json();
-    const { name, description, serviceCategory, surface, workType, unit, unitPrice, isActive } = body;
+    const { name, description, serviceCategory, surface, workType, unit, unitPrice, isActive, applicableProjectTypes } = body;
     const computedCategory = serviceCategory || (surface && workType ? `${surface} - ${workType}` : null);
     if (!name || !computedCategory || !unit || unitPrice === undefined) {
       return NextResponse.json(
@@ -45,6 +45,9 @@ export async function POST(request: NextRequest) {
         unit,
         unitPrice: parseFloat(unitPrice),
         isActive: isActive ?? true,
+        applicableProjectTypes: Array.isArray(applicableProjectTypes) && applicableProjectTypes.length > 0
+          ? JSON.stringify(applicableProjectTypes)
+          : null,
       },
     });
     return NextResponse.json(service, { status: 201 });

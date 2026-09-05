@@ -15,7 +15,7 @@ export async function PUT(
 
     const { id: projectId, itemId } = await params;
     const body = await request.json();
-    const { isClientProvided } = body;
+    void body;
 
     const project = await prisma.project.findUnique({
       where: { id: projectId },

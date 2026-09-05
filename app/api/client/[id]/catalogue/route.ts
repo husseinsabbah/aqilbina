@@ -24,8 +24,10 @@ export async function GET(
       );
     }
 
-    // Vérification du métier
-    if (user.trade !== 'artisan') {
+    // Vérification du métier : certains profils artisan utilisent un trade spécialisé
+    const isArtisanProfile = user.role === 'artisan' || user.trade === 'artisan';
+
+    if (!isArtisanProfile) {
       return NextResponse.json(
         { error: 'Cet utilisateur n\'est pas un artisan' },
         { status: 400 }

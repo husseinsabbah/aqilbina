@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Send, Eye, Package } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { Send } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
 type Product = {
@@ -23,7 +22,6 @@ type AvailableProject = {
 };
 
 export default function VendeurProjetsPage() {
-  const router = useRouter();
   const [availableProjects, setAvailableProjects] = useState<AvailableProject[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);

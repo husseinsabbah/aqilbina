@@ -37,7 +37,7 @@ export default function SubscriptionModal({ agent, onClose, onConfirm }: Subscri
         </p>
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Nombre d'agents (1 inclus)
+            Nombre d&apos;agents (1 inclus)
           </label>
           <input
             type="number"

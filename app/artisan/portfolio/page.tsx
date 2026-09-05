@@ -71,6 +71,18 @@ export default function ArtisanPortfolioPage() {
                 <div className="p-4">
                   <h2 className="font-semibold text-gray-800">{project.name}</h2>
                   <p className="text-sm text-gray-500 mt-1">{project.type || 'Projet'}</p>
+
+                  {project.portfolioRating != null && (
+                    <div className="mt-2 text-sm text-amber-700">
+                      {'★'.repeat(Number(project.portfolioRating))}{'☆'.repeat(5 - Number(project.portfolioRating))}
+                      <span className="ml-2">({project.portfolioRating}/5)</span>
+                    </div>
+                  )}
+
+                  {project.portfolioReview && (
+                    <p className="mt-2 text-xs text-gray-600 line-clamp-3">“{project.portfolioReview}”</p>
+                  )}
+
                   <div className="mt-3 text-xs text-gray-500">
                     {project.startDate && <span>Début : {new Date(project.startDate).toLocaleDateString()}</span>}
                     {project.endDate && <span className="ml-2">Fin : {new Date(project.endDate).toLocaleDateString()}</span>}

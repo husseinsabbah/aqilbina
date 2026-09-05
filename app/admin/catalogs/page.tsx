@@ -37,20 +37,6 @@ export default function AdminCatalogsPage() {
   const [selectedCatalog, setSelectedCatalog] = useState<CatalogDetails | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (status === 'loading') return;
-    if (!session) {
-      router.push('/login');
-      return;
-    }
-    if (session.user.role !== 'admin') {
-      router.push('/dashboard');
-      return;
-    }
-
-    void loadCatalogs();
-  }, [session, status, router]);
-
   const loadCatalogs = async () => {
     try {
       const res = await fetch('/api/admin/catalogs', { credentials: 'include' });
@@ -64,6 +50,20 @@ export default function AdminCatalogsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (status === 'loading') return;
+    if (!session) {
+      router.push('/login');
+      return;
+    }
+    if (session.user.role !== 'admin') {
+      router.push('/dashboard');
+      return;
+    }
+
+    void loadCatalogs();
+  }, [session, status, router]);
 
   const openCatalog = async (catalogId: string) => {
     try {

@@ -1,44 +1,73 @@
-// app/api/projects/[id]/proposals/route.ts
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
-import { requireRole } from '@/lib/role-access';
+import { NextResponse } from "next/server";
+import { PrismaClient } from "@prisma/client";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
 
-export async function GET(
-  request: Request,
+const prisma = new PrismaClient();
+
+export async function POST(
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
-    const auth = requireRole(session, ['artisan'], 'Accès réservé aux artisans');
-    if (!auth.ok) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    if (!session) {
+      return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
     }
 
-    const { id: projectId } = await params;
+    const { id } = await params;
+    const body = await req.json();
+    const { items, deliveryDays, message } = body;
 
-    // Vérifier que le projet appartient à l'artisan
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return NextResponse.json({ error: "Devis vide" }, { status: 400 });
+    }
+
+    // Vérifier que l'utilisateur est un professionnel
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { role: true },
+    });
+    if (!user || (user.role !== "artisan" && user.role !== "vendeur")) {
+      return NextResponse.json({ error: "Seuls les professionnels peuvent envoyer un devis." }, { status: 403 });
+    }
+
+    // Vérifier que le projet existe
     const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: { userId: true },
+      where: { id },
     });
-    if (!project || project.userId !== session.user.id) {
-      return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
+    if (!project) {
+      return NextResponse.json({ error: "Projet introuvable" }, { status: 404 });
     }
 
-    const proposals = await prisma.vendorProposal.findMany({
-      where: { projectId },
-      include: {
-        product: { select: { name: true, salePrice: true } },
-        user: { select: { name: true, companyName: true } },
+    // Calculer le total
+    const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+    const totalPrice = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+
+    // Créer la proposition
+    const proposal = await prisma.vendorProposal.create({
+      data: {
+        projectId: id,
+        userId: session.user.id,
+        productId: "placeholder", // À adapter si vous avez un vrai produit
+        quantity: totalQuantity,
+        unitPrice: totalPrice,
+        message: message || null,
+        status: "EN_ATTENTE",
+        deliveryDate: deliveryDays ? new Date(Date.now() + deliveryDays * 86400000) : null,
+        marketingMessage: message || null,
       },
-      orderBy: { createdAt: 'desc' },
     });
 
-    return NextResponse.json(proposals);
+    // Mettre à jour le statut du projet si nécessaire
+    await prisma.project.update({
+      where: { id },
+      data: { status: "NEGOCIATION" },
+    });
+
+    return NextResponse.json({ success: true, proposalId: proposal.id });
   } catch (error) {
-    console.error('GET /api/projects/[id]/proposals error:', error);
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });
+    console.error("Erreur envoi devis:", error);
+    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
   }
 }

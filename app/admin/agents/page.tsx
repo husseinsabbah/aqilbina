@@ -37,20 +37,6 @@ export default function AdminAgentsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (status === 'loading') return;
-    if (!session) {
-      router.push('/login');
-      return;
-    }
-    if (session.user.role !== 'admin') {
-      router.push('/dashboard');
-      return;
-    }
-
-    void loadAgents();
-  }, [session, status, router]);
-
   const loadAgents = async () => {
     try {
       const res = await fetch('/api/admin/agents', { credentials: 'include' });
@@ -66,6 +52,20 @@ export default function AdminAgentsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (status === 'loading') return;
+    if (!session) {
+      router.push('/login');
+      return;
+    }
+    if (session.user.role !== 'admin') {
+      router.push('/dashboard');
+      return;
+    }
+
+    void loadAgents();
+  }, [session, status, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

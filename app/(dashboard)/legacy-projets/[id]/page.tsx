@@ -84,9 +84,9 @@ export default function ProjetEditorPage() {
   // ========== ÉTATS ==========
   const [project, setProject] = useState<Project | null>(null);
   const [items, setItems] = useState<ProjectItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<any[]>([]);
   const [services, setServices] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState<Record<string, boolean>>({});
   const [removedProducts, setRemovedProducts] = useState<RemovedProduct[]>([]);
   const [proposals, setProposals] = useState<VendorProposal[]>([]);
@@ -96,6 +96,7 @@ export default function ProjetEditorPage() {
   const [chatMessages, setChatMessages] = useState<Array<{ id: string; role: 'user' | 'assistant'; content: string; createdAt: string }>>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
+  const [nowMs, setNowMs] = useState<number | null>(null);
 
   // ===== TVA =====
   const [tvaRate, setTvaRate] = useState<number>(20);
@@ -104,6 +105,12 @@ export default function ProjetEditorPage() {
 
   // Debounce
   const debounceTimers = useRef<Record<string, NodeJS.Timeout>>({});
+
+  useEffect(() => {
+    setNowMs(Date.now());
+    const intervalId = window.setInterval(() => setNowMs(Date.now()), 60000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   // ========== CHARGEMENT ==========
   const fetchProject = async () => {
@@ -695,7 +702,7 @@ export default function ProjetEditorPage() {
     </p>
     <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
       {proposals.map((proposal) => {
-        const isNew = proposal.status === 'EN_ATTENTE' && new Date(proposal.createdAt) > new Date(Date.now() - 5 * 60 * 1000);
+        const isNew = proposal.status === 'EN_ATTENTE' && nowMs !== null && new Date(proposal.createdAt).getTime() > nowMs - 5 * 60 * 1000;
         return (
           <div
             key={proposal.id}

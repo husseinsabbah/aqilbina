@@ -67,6 +67,119 @@ const sanitizeAgentName = (value: string, fallback: string) => {
   return match || normalized;
 };
 
+const buildCatalogNameFromValue = (value?: string | null) => {
+  const trimmed = (value ?? '').trim();
+  if (!trimmed) return 'Catalogue Vendeur';
+  const withoutPrefix = trimmed.replace(/^Catalogue\s+/i, '').trim();
+  return `Catalogue ${withoutPrefix || 'Vendeur'}`;
+};
+
+const isSupervisorSpecialty = (specialty?: string | null) => {
+  const normalized = (specialty ?? '').toLowerCase().trim();
+  return ['superviseur', 'supervision', 'coordination', 'gestion'].includes(normalized);
+};
+
+const getSupervisorLabel = (type: string) => {
+  const normalized = (type ?? '').toLowerCase();
+  if (normalized === 'artisan') return 'Superviseur Artisan';
+  if (normalized === 'vendeur') return 'Superviseur Vendeur';
+  return 'Superviseur';
+};
+
+const ensureRoleSupervisorAgent = async (type: string) => {
+  const supervisorType = type.toLowerCase();
+  const supervisorName = getSupervisorLabel(supervisorType);
+
+  const supervisorAgent = await prisma.agent.findFirst({
+    where: {
+      type: supervisorType,
+      OR: [
+        { specialty: { in: ['superviseur', 'supervision', 'coordination', 'gestion'] } },
+        { name: { contains: 'superviseur' } },
+      ],
+    },
+  });
+
+  if (supervisorAgent) {
+    return supervisorAgent;
+  }
+
+  return prisma.agent.upsert({
+    where: { id: `seed-${supervisorType}-superviseur` },
+    update: {
+      name: supervisorName,
+      type: supervisorType,
+      specialty: 'superviseur',
+      description: `Agent de supervision pour coordonner plusieurs agents ${supervisorType === 'artisan' ? 'artisanaux' : 'vendeurs'} spécialisés.`,
+      isActive: true,
+    },
+    create: {
+      id: `seed-${supervisorType}-superviseur`,
+      name: supervisorName,
+      type: supervisorType,
+      specialty: 'superviseur',
+      description: `Agent de supervision pour coordonner plusieurs agents ${supervisorType === 'artisan' ? 'artisanaux' : 'vendeurs'} spécialisés.`,
+      priceMonthly: supervisorType === 'artisan' ? 59 : 79,
+      priceYearly: supervisorType === 'artisan' ? 590 : 790,
+      isActive: true,
+    },
+  });
+};
+
+const ensureFamilySupervisorTeam = async (userId: string, agentType: string) => {
+  const familyType = agentType.toLowerCase();
+  if (!['vendeur', 'artisan'].includes(familyType)) return null;
+
+  const teamName = getSupervisorLabel(familyType);
+  const existing = await prisma.team.findFirst({
+    where: { ownerId: userId, name: teamName },
+  });
+
+  if (existing) return existing;
+
+  return prisma.team.create({
+    data: {
+      ownerId: userId,
+      name: teamName,
+      specialty: familyType,
+      members: {
+        create: {
+          userId,
+          role: 'OWNER',
+          isActive: true,
+        },
+      },
+    },
+  });
+};
+
+const assignUserAgentToFamilyTeam = async (userId: string, agentType: string, userAgentId: string) => {
+  const familyType = agentType.toLowerCase();
+  if (!['vendeur', 'artisan'].includes(familyType)) return null;
+
+  const team = await ensureFamilySupervisorTeam(userId, familyType);
+  if (!team) return null;
+
+  return prisma.teamAgent.upsert({
+    where: {
+      teamId_userAgentId: {
+        teamId: team.id,
+        userAgentId,
+      },
+    },
+    update: {
+      isActive: true,
+      assignedById: userId,
+    },
+    create: {
+      teamId: team.id,
+      userAgentId,
+      assignedById: userId,
+      isActive: true,
+    },
+  });
+};
+
 export async function GET() {
   return NextResponse.json({ message: 'Route fonctionnelle' });
 }
@@ -140,22 +253,7 @@ export async function POST(request: NextRequest) {
     const safeQuantity = Math.max(1, Number(quantity) || 1);
     const requestedNames = Array.isArray(agentNames) ? agentNames : [];
 
-    const hasExistingActive = await prisma.userAgent.findFirst({
-      where: {
-        userId: session.user.id,
-        agentId: agent.id,
-        OR: [
-          { status: 'TRIAL', trialEndDate: { gt: new Date() } },
-          { status: 'ACTIVE', endDate: { gt: new Date() } },
-        ],
-      },
-    });
-
-    if (hasExistingActive) {
-      return NextResponse.json({
-        error: 'Vous avez déjà un abonnement actif pour cet agent.',
-      }, { status: 409 });
-    }
+    
 
     const customNames = Array.from({ length: safeQuantity }, (_, index) => {
       const rawValue = requestedNames[index] ?? '';
@@ -169,11 +267,64 @@ export async function POST(request: NextRequest) {
 
     const effectiveAgentId = agent.id;
 
+    const activeUserAgents = await prisma.userAgent.findMany({
+      where: { userId: session.user.id, status: { in: ['TRIAL', 'ACTIVE'] } },
+      include: { agent: true },
+    });
+
+    const roleFamilies = ['vendeur', 'artisan'];
+
+    for (const roleFamily of roleFamilies) {
+      const specializedAgents = activeUserAgents.filter(
+        (userAgent) =>
+          userAgent.agent.type === roleFamily && !isSupervisorSpecialty(userAgent.agent.specialty)
+      );
+
+      const isSupervisorAgentOfFamily = agent.type === roleFamily && isSupervisorSpecialty(agent.specialty);
+      const familyNeedsSupervisor = !isSupervisorAgentOfFamily && specializedAgents.length + (agent.type === roleFamily ? safeQuantity : 0) > 2;
+
+      if (familyNeedsSupervisor) {
+        const supervisorAgent = await ensureRoleSupervisorAgent(roleFamily);
+        const supervisorName = getSupervisorLabel(roleFamily);
+
+        const supervisorUserAgent = await prisma.userAgent.upsert({
+          where: {
+            userId_agentId_customName: {
+              userId: session.user.id,
+              agentId: supervisorAgent.id,
+              customName: supervisorName,
+            },
+          },
+          update: {
+            status: 'TRIAL',
+            trialEndDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+            startDate: new Date(),
+          },
+          create: {
+            userId: session.user.id,
+            agentId: supervisorAgent.id,
+            customName: supervisorName,
+            status: 'TRIAL',
+            trialEndDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+            startDate: new Date(),
+          },
+        });
+
+        await assignUserAgentToFamilyTeam(session.user.id, roleFamily, supervisorUserAgent.id);
+      }
+    }
+
     const created = [];
     let defaultCatalog = null;
 
     if (agent.type === 'vendeur') {
-      const catalogName = 'Catalogue Carrelage';
+      const vendorTrade = [session.user.trade, agent.specialty, 'Vendeur']
+        .map((value) => (value ?? '').trim())
+        .find((value) => Boolean(value));
+      const catalogName = buildCatalogNameFromValue(vendorTrade);
+      const catalogDescription = vendorTrade
+        ? `Catalogue principal pour les produits ${vendorTrade}`
+        : 'Catalogue principal pour les produits du vendeur';
 
       const existingCatalog = await prisma.catalog.findFirst({
         where: {
@@ -189,7 +340,13 @@ export async function POST(request: NextRequest) {
           where: {
             userId: session.user.id,
             name: {
-              in: ['Catalogue Vendeur', 'Catalogue vendeur', 'Catalogue Vendeur Matériel'],
+              in: [
+                'Catalogue Vendeur',
+                'Catalogue vendeur',
+                'Catalogue Vendeur Matériel',
+                'Catalogue Carrelage',
+                'Catalogue Quincaillerie',
+              ],
             },
           },
         });
@@ -197,13 +354,13 @@ export async function POST(request: NextRequest) {
         if (legacyCatalog) {
           defaultCatalog = await prisma.catalog.update({
             where: { id: legacyCatalog.id },
-            data: { name: catalogName },
+            data: { name: catalogName, description: catalogDescription },
           });
         } else {
           defaultCatalog = await ensureCatalogForUser(
             session.user.id,
             catalogName,
-            'Catalogue principal pour les produits de carrelage'
+            catalogDescription
           );
         }
       }
@@ -227,6 +384,8 @@ export async function POST(request: NextRequest) {
           startDate: new Date(),
         },
       });
+
+      await assignUserAgentToFamilyTeam(session.user.id, agent.type, userAgent.id);
 
       created.push({ ...userAgent, catalog: agentCatalog });
     }

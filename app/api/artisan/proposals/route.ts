@@ -64,6 +64,12 @@ export async function GET() {
       vendor: p.user,
     }));
 
+    // Marquer les offres reçues comme vues dès que l'artisan consulte la liste
+    await prisma.vendorProposal.updateMany({
+      where: { projectId: { in: projectIds }, viewedAt: null },
+      data: { viewedAt: new Date() },
+    });
+
     return NextResponse.json(formatted);
   } catch (error) {
     console.error('GET /api/artisan/proposals error:', error);

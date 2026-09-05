@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { userAgentId, paymentMethodId } = body;
+    const { userAgentId } = body;
 
     if (!userAgentId) {
       return NextResponse.json({ error: 'userAgentId requis' }, { status: 400 });

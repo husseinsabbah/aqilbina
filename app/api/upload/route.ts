@@ -7,13 +7,9 @@ import { authOptions } from '../../auth';
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. Vérifier que l'utilisateur est authentifié
     const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
-    }
+    const uploaderId = session?.user?.id ?? 'public';
 
-    // 2. Récupérer le fichier
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
 
@@ -44,7 +40,7 @@ export async function POST(request: NextRequest) {
 
     // 5. Générer un nom unique
     const ext = path.extname(file.name) || (file.type.startsWith('video/') ? '.mp4' : '.png');
-    const fileName = `upload_${session.user.id}_${Date.now()}${ext}`;
+    const fileName = `upload_${uploaderId}_${Date.now()}${ext}`;
     const uploadDir = path.join(process.cwd(), 'public', 'uploads');
     const filePath = path.join(uploadDir, fileName);
 

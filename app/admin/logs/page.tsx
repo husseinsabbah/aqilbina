@@ -48,20 +48,6 @@ export default function AdminLogsPage() {
   const [adminLogs, setAdminLogs] = useState<AdminLog[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (status === 'loading') return;
-    if (!session) {
-      router.push('/login');
-      return;
-    }
-    if (session.user.role !== 'admin') {
-      router.push('/dashboard');
-      return;
-    }
-
-    void loadLogs();
-  }, [session, status, router]);
-
   const loadLogs = async () => {
     try {
       const res = await fetch('/api/admin/logs', { credentials: 'include' });
@@ -76,6 +62,20 @@ export default function AdminLogsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (status === 'loading') return;
+    if (!session) {
+      router.push('/login');
+      return;
+    }
+    if (session.user.role !== 'admin') {
+      router.push('/dashboard');
+      return;
+    }
+
+    void loadLogs();
+  }, [session, status, router]);
 
   if (status === 'loading' || !session) {
     return <div className="p-8 text-slate-600">Chargement...</div>;

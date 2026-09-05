@@ -1,6 +1,7 @@
 import NextAuth, { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
+import bcrypt from "bcryptjs";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -11,22 +12,22 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Mot de passe", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
+        const email = credentials?.email?.trim().toLowerCase();
+        const password = credentials?.password;
+
+        if (!email || !password) {
           return null;
         }
 
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email.toLowerCase() },
+          where: { email },
         });
 
-        if (!user) {
+        if (!user || !user.password) {
           return null;
         }
 
-        // ⚠️ Attention : ici le mot de passe est en clair dans la base (à sécuriser avec bcrypt plus tard)
-        const storedPassword = user.password ?? null;
-        const isValidPassword =
-          storedPassword !== null && credentials.password === storedPassword;
+        const isValidPassword = await bcrypt.compare(password, user.password);
 
         if (!isValidPassword) {
           return null;
@@ -38,6 +39,7 @@ export const authOptions: NextAuthOptions = {
           name: user.name ?? user.email,
           role: user.role,
           trade: user.trade,
+          companyName: user.companyName,
         };
       },
     }),
@@ -54,6 +56,7 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.role = user.role;
         token.trade = user.trade;
+        token.companyName = user.companyName;
       }
       return token;
     },
@@ -62,6 +65,7 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.id as string;
         session.user.role = token.role as string;
         session.user.trade = token.trade as string;
+        session.user.companyName = token.companyName as string;
       }
       return session;
     },

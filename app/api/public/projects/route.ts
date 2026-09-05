@@ -1,273 +1,234 @@
-import { NextResponse } from 'next/server';
-import crypto from 'crypto';
-import bcrypt from 'bcryptjs';
-import { prisma } from '@/lib/prisma';
+import { NextResponse } from "next/server";
+import { PrismaClient } from "@prisma/client";
+import { randomBytes } from "crypto";
+import fs from "fs";
+import path from "path";
+import bcrypt from "bcryptjs";
 
-const TRADE_KEYWORDS: Record<string, string[]> = {
-  carreleur: ['carrelage', 'carreau', 'faience', 'faïence', 'joint', 'colle'],
-  plombier: ['plomberie', 'sanitaire', 'douche', 'lavabo', 'chauffage', 'canalisation'],
-  electricien: ['electricite', 'électricité', 'eclairage', 'éclairage', 'prise', 'tableau', 'domotique'],
-  peintre: ['peinture', 'enduit', 'facade', 'façade', 'vernis'],
-  menuisier: ['menuiserie', 'bois', 'fenetre', 'fenêtre', 'porte', 'placard'],
-  macon: ['maconnerie', 'maçonnerie', 'parpaing', 'beton', 'béton', 'fondation'],
-};
+const prisma = new PrismaClient();
 
-const detectTradeFromText = (value: string): string | null => {
-  const normalized = value.toLowerCase();
-
-  for (const [trade, keywords] of Object.entries(TRADE_KEYWORDS)) {
-    if (keywords.some((keyword) => normalized.includes(keyword))) {
-      return trade;
-    }
+function normalizePublicProjectUrl(projectId: string, url?: string | null) {
+  if (!url) return `http://localhost:3000/projets/${projectId}`;
+  const trimmed = url.trim();
+  const normalized = trimmed.replace(/\/$/, "");
+  if (normalized.includes("/undefined/projets/")) {
+    return normalized.replace(/\/undefined\/projets\//, "/projets/");
   }
-
-  return null;
-};
-
-const computeSuggestedQuantity = (category: string, totalSurface: number | null) => {
-  if (!totalSurface || totalSurface <= 0) return 1;
-
-  if (/carreau|carrelage|faience|faïence/i.test(category)) {
-    return Math.max(1, Math.ceil(totalSurface * 1.1));
+  if (normalized.includes("/projets/")) {
+    return normalized;
   }
+  return `${normalized}/projets/${projectId}`;
+}
 
-  if (/colle|joint|enduit|peinture/i.test(category)) {
-    return Math.max(1, Math.ceil(totalSurface));
-  }
+function getPublicBaseUrl(): string {
+  const rawBase = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || process.env.AUTH_URL || "http://localhost:3000";
+  return rawBase.replace(/\/$/, "");
+}
 
-  return Math.max(1, Math.ceil(totalSurface / 5));
-};
+async function saveFile(file: File, basePath: string): Promise<string> {
+  const bytes = await file.arrayBuffer();
+  const buffer = Buffer.from(bytes);
+  const ext = path.extname(file.name);
+  const filename = `${Date.now()}-${randomBytes(4).toString("hex")}${ext}`;
+  const fullPath = path.join(basePath, filename);
+  if (!fs.existsSync(basePath)) fs.mkdirSync(basePath, { recursive: true });
+  fs.writeFileSync(fullPath, buffer);
+  return `/uploads/projects/${filename}`;
+}
 
-type SecuredSelectedProduct = {
-  productId: string;
-  sellerId: string;
-  trade: string;
-  name: string;
-  brand: string | null;
-  category: string;
-  quantity: number;
-  unit: string;
-  seller: string;
-  salePrice: number;
-  imageUrl: string | null;
-};
+async function getOrCreateSystemUser(): Promise<{ id: string }> {
+  const systemEmail = "system@aqilbina.com";
+  let user = await prisma.user.findUnique({
+    where: { email: systemEmail },
+    select: { id: true },
+  });
 
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-
-    const artisanId = String(body.artisanId || '').trim();
-    const professionalRole = String(body.professionalRole || 'artisan').trim().toLowerCase();
-    const professionalTrade = String(body.professionalTrade || '').trim().toLowerCase();
-    const clientName = String(body.clientName || '').trim();
-    const clientPhone = String(body.clientPhone || '').trim();
-    const clientEmail = String(body.clientEmail || '').trim();
-    const clientAddress = String(body.clientAddress || '').trim();
-    const projectName = String(body.projectName || '').trim();
-    const projectType = String(body.projectType || '').trim();
-    const description = String(body.description || '').trim();
-    const workType = body.workType ? String(body.workType).trim() : null;
-    const surface = body.surface === null || body.surface === undefined || body.surface === '' ? null : Number(body.surface);
-    const budgetEstimate = body.budgetEstimate === null || body.budgetEstimate === undefined || body.budgetEstimate === '' ? null : Number(body.budgetEstimate);
-    const detailFields = body.details && typeof body.details === 'object' ? body.details : null;
-    const requestedProducts = detailFields?.products && typeof detailFields.products === 'object' ? detailFields.products : null;
-
-    if (!artisanId || !clientName || !clientPhone || !clientEmail || !clientAddress || !projectName) {
-      return NextResponse.json({ error: 'Merci de remplir tous les champs obligatoires.' }, { status: 400 });
-    }
-
-    const artisan = await prisma.user.findUnique({
-      where: { id: artisanId },
-      select: {
-        id: true,
-        trade: true,
-        role: true,
-        companyName: true,
-        name: true,
-        services: { select: { serviceCategory: true } },
-        products: { select: { category: true } },
+  if (!user) {
+    const passwordHash = await bcrypt.hash("system-" + randomBytes(8).toString("hex"), 10);
+    user = await prisma.user.create({
+      data: {
+        email: systemEmail,
+        name: "Système Aqil Bina",
+        role: "admin",
+        password: passwordHash,
       },
+      select: { id: true },
     });
+  }
 
-    if (!artisan || (artisan.trade !== 'artisan' && artisan.role !== 'artisan')) {
-      return NextResponse.json({ error: 'Artisan introuvable.' }, { status: 404 });
+  return user;
+}
+
+export async function POST(req: Request) {
+  try {
+    const formData = await req.formData();
+    const dataStr = formData.get("data");
+    if (!dataStr || typeof dataStr !== "string") {
+      return NextResponse.json({ error: "Données manquantes." }, { status: 400 });
     }
 
-    const availableTrades = Array.from(
-      new Set(
-        [
-          artisan.trade || '',
-          ...artisan.services.map((service) => service.serviceCategory || ''),
-          ...artisan.products.map((product) => product.category || ''),
-        ]
-          .map((value) => detectTradeFromText(value) || value.toLowerCase().trim())
-          .filter(Boolean)
-      )
-    );
-
-    const requestedActiveTrades = requestedProducts && Array.isArray(requestedProducts.activeTrades)
-      ? requestedProducts.activeTrades
-          .map((value: unknown) => String(value || '').toLowerCase().trim())
-          .filter(Boolean)
-      : [];
-
-    const allowedActiveTrades = requestedActiveTrades.filter((tradeValue: string) => availableTrades.includes(tradeValue));
-
-    const requestedSelected = requestedProducts && Array.isArray(requestedProducts.selected)
-      ? requestedProducts.selected.filter((row: unknown) => row && typeof row === 'object')
-      : [];
-
-    const requestedProductIds = requestedSelected
-      .map((row: Record<string, unknown>) => String(row.productId || '').trim())
-      .filter(Boolean);
-
-    const catalogProducts = requestedProductIds.length > 0
-      ? await prisma.product.findMany({
-          where: { id: { in: requestedProductIds } },
-          select: {
-            id: true,
-            name: true,
-            category: true,
-            brand: true,
-            salePrice: true,
-            imageUrl: true,
-            description: true,
-            user: { select: { id: true, name: true, companyName: true } },
-          },
-        })
-      : [];
-
-    const catalogById = new Map(catalogProducts.map((product) => [product.id, product]));
-
-    const securedSelectedProducts: SecuredSelectedProduct[] = requestedSelected.flatMap((row: Record<string, unknown>) => {
-      const productId = String(row.productId || '').trim();
-      const trade = String(row.trade || '').toLowerCase().trim();
-      if (!productId || !trade || !allowedActiveTrades.includes(trade)) {
-        return [];
-      }
-
-      const product = catalogById.get(productId);
-      if (!product) {
-        return [];
-      }
-
-      const detectedTrade = detectTradeFromText(
-        [product.category, product.name, product.description || ''].join(' ')
-      );
-
-      if (detectedTrade && detectedTrade !== trade) {
-        return [];
-      }
-
-      const normalizedSurface = Number.isFinite(surface) && surface && surface > 0 ? surface : null;
-      const quantity = computeSuggestedQuantity(product.category, normalizedSurface);
-
-      return [{
-        productId: product.id,
-        sellerId: product.user.id,
-        trade,
-        name: product.name,
-        brand: product.brand,
-        category: product.category,
-        quantity,
-        unit: 'unité',
-        seller: product.user.companyName || product.user.name,
-        salePrice: product.salePrice,
-        imageUrl: product.imageUrl,
-      }];
-    });
-
-    const securedProducts = {
-      activeTrades: allowedActiveTrades,
-      selected: securedSelectedProducts,
-      manual: null,
-      snapshotId: crypto.randomUUID(),
-      securedAt: new Date().toISOString(),
-      note: 'Prix et quantités recalculés côté serveur.',
-    };
-
-    const recipients = professionalTrade
-      ? await prisma.user.findMany({
-          where: {
-            OR: [{ role: professionalRole }, { trade: professionalRole }],
-            trade: professionalTrade,
-          },
-          select: { id: true, trade: true },
-        })
-      : [{ id: artisan.id, trade: artisan.trade }];
-
-    const privateDetails = {
-      description: description || null,
-      projectType: projectType || null,
+    const body = JSON.parse(dataStr);
+    const {
+      artisanId,
+      professionalRole,
+      professionalTrade,
+      selectedTrades,
+      clientName,
+      clientPhone,
+      clientEmail,
+      clientAddress,
+      projectName,
+      projectType,
       workType,
-      sol: detailFields?.sol && typeof detailFields.sol === 'object' ? detailFields.sol : null,
-      mur: detailFields?.mur && typeof detailFields.mur === 'object' ? detailFields.mur : null,
-      specialtyDetails: detailFields?.specialtyDetails || null,
-      products: securedProducts,
-    };
+      description,
+      budgetEstimate,
+      batiment,
+      chantiers,
+      pieces,
+      desiredStartDate,
+      desiredEndDate,
+    } = body;
 
-    const enrichedDescription = JSON.stringify(privateDetails);
+    if (!clientName || !clientEmail || !clientPhone || !projectName) {
+      return NextResponse.json({ error: "Champs obligatoires manquants." }, { status: 400 });
+    }
 
-    const pin = Array.from({ length: 6 }, () => String(Math.floor(Math.random() * 10))).join('');
-    const hashedPin = await bcrypt.hash(pin, 10);
+    const normalizedTargetRole = ["all", "artisan", "vendeur", "promoteur"].includes(professionalRole)
+      ? professionalRole
+      : "artisan";
 
+    // Gestion du broadcast
+    let finalUserId: string;
+    const isBroadcast = artisanId === "broadcast" || !artisanId;
+
+    if (isBroadcast) {
+      const systemUser = await getOrCreateSystemUser();
+      finalUserId = systemUser.id;
+    } else {
+      const user = await prisma.user.findUnique({
+        where: { id: artisanId },
+        select: { id: true },
+      });
+      if (!user) {
+        return NextResponse.json({ error: "Artisan introuvable." }, { status: 400 });
+      }
+      finalUserId = artisanId;
+    }
+
+    const pin = randomBytes(3).toString("hex").toUpperCase();
+
+    // Sauvegarde des fichiers
+    const files = formData.getAll("files");
+    const fileUrls: string[] = [];
+    if (files.length > 0) {
+      const uploadDir = path.join(process.cwd(), "public/uploads/projects");
+      for (const file of files) {
+        if (file instanceof File) {
+          try {
+            const url = await saveFile(file, uploadDir);
+            fileUrls.push(url);
+          } catch (err) {
+            console.error("Erreur sauvegarde fichier:", err);
+          }
+        }
+      }
+    }
+
+    // Calcul de la surface totale
+    let totalSurface: number | null = null;
+    if (pieces && Array.isArray(pieces) && pieces.length > 0) {
+      let sum = 0;
+      for (const piece of pieces) {
+        const sol = parseFloat(piece.solSurface);
+        if (!isNaN(sol) && sol > 0) {
+          sum += sol;
+        }
+      }
+      if (sum > 0) totalSurface = sum;
+    }
+
+    // Création du projet avec les dates
     const project = await prisma.project.create({
       data: {
-        userId: artisan.id,
+        userId: finalUserId,
         name: projectName,
-        description: enrichedDescription,
-        type: projectType || 'Demande de devis',
-        surface: Number.isFinite(surface) && surface > 0 ? surface : null,
-        budgetEstimate: Number.isFinite(budgetEstimate) ? budgetEstimate : null,
+        description: description || null,
+        type: projectType || null,
+        surface: totalSurface,
+        budgetEstimate: budgetEstimate || null,
+        status: "ACTIVE",
         clientName,
         clientPhone,
         clientEmail,
         clientAddress,
-        status: 'ACTIVE',
-        sharePublicUrl: '',
-        clientFeedbackStatus: 'PENDING',
-        projectAccessPinHash: hashedPin,
-        projectAccessPinSentAt: new Date(),
-        projectAccessPinExpiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
-        projectAccessAttempts: 0,
+startDate: desiredStartDate ? new Date(desiredStartDate) : null,
+endDate: desiredEndDate ? new Date(desiredEndDate) : null,        metadata: {
+          selectedTrades: selectedTrades || [],
+          workType: workType || null,
+          professionalRole,
+          professionalTrade,
+          batiment,
+          chantiers,
+          pieces: pieces || [],
+          files: fileUrls,
+          details: {
+            description: description || "",
+          },
+        },
       },
     });
 
-    const sellerIds = Array.from(new Set(securedSelectedProducts.map((product) => String(product.sellerId || '')).filter(Boolean)));
-    const recipientRows = [
-      ...recipients.map((recipient) => ({
-        projectId: project.id,
-        professionalId: recipient.id,
-        trade: recipient.trade || professionalTrade || 'artisan',
-      })),
-      ...sellerIds.map((sellerId) => ({
-        projectId: project.id,
-        professionalId: sellerId,
-        trade: 'vendeur',
-      })),
-    ];
+    // Gestion des invitations
+    if (isBroadcast && selectedTrades && selectedTrades.length > 0) {
+      const roleFilter = normalizedTargetRole === "all"
+        ? ["artisan", "vendeur", "promoteur"]
+        : [normalizedTargetRole];
 
-    await prisma.projectRecipient.createMany({
-      data: recipientRows,
-    });
+      const recipients = await prisma.user.findMany({
+        where: {
+          role: { in: roleFilter },
+          trade: { in: selectedTrades },
+        },
+        select: { id: true, trade: true, role: true },
+      });
 
-    const publicUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/projets/${project.id}`;
+      if (recipients.length > 0) {
+        await prisma.projectRecipient.createMany({
+          data: recipients.map((recipient) => ({
+            projectId: project.id,
+            professionalId: recipient.id,
+            trade: recipient.trade || recipient.role || "professionnel",
+            status: "INVITE",
+            message: `Demande de devis ${normalizedTargetRole === "all" ? "multi-profils" : normalizedTargetRole} (${selectedTrades.join(", ")})`,
+          })),
+        });
+      }
+    } else if (!isBroadcast && artisanId) {
+      const existingRecipient = await prisma.projectRecipient.findFirst({
+        where: {
+          projectId: project.id,
+          professionalId: artisanId,
+        },
+      });
 
-    await prisma.project.update({
-      where: { id: project.id },
-      data: {
-        sharePublicUrl: publicUrl,
-      },
-    });
+      if (!existingRecipient) {
+        await prisma.projectRecipient.create({
+          data: {
+            projectId: project.id,
+            professionalId: artisanId,
+            trade: professionalTrade || "artisan",
+            status: "INVITE",
+            message: "Demande de devis créée par le client.",
+          },
+        });
+      }
+    }
 
-    return NextResponse.json({
-      ok: true,
-      projectId: project.id,
-      publicUrl,
-      pin,
-    }, { status: 201 });
+    const publicUrl = normalizePublicProjectUrl(project.id, `${getPublicBaseUrl()}/projets/${project.id}`);
+
+    return NextResponse.json({ success: true, projectId: project.id, publicUrl, pin });
   } catch (error) {
-    console.error('POST /api/public/projects error:', error);
-    return NextResponse.json({ error: 'Erreur serveur lors de la création du projet.' }, { status: 500 });
+    console.error("Erreur création projet:", error);
+    return NextResponse.json({ error: "Erreur interne du serveur." }, { status: 500 });
   }
 }

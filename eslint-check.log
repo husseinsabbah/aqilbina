@@ -1,0 +1,292 @@
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\(dashboard)\abonnement\page.tsx
+  96:10  warning  'activeNameInput' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\(dashboard)\layout.tsx
+  14:3  warning  'Shield' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\(dashboard)\legacy-projets\[id]\SelectorTab.tsx
+  3:20  warning  'useEffect' is defined but never used  @typescript-eslint/no-unused-vars
+  4:31  warning  'X' is defined but never used          @typescript-eslint/no-unused-vars
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\(dashboard)\legacy-projets\[id]\SuggestionsIA.tsx
+  4:23  warning  'Lightbulb' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\(dashboard)\legacy-projets\[id]\page.tsx
+   88:10  warning  'products' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            @typescript-eslint/no-unused-vars
+   89:10  warning  'services' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            @typescript-eslint/no-unused-vars
+  698:99  error    Error: Cannot call impure function during render
+
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\(dashboard)\legacy-projets\[id]\page.tsx:698:99
+  696 |     <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+  697 |       {proposals.map((proposal) => {
+> 698 |         const isNew = proposal.status === 'EN_ATTENTE' && new Date(proposal.createdAt) > new Date(Date.now() - 5 * 60 * 1000);
+      |                                                                                                   ^^^^^^^^^^ Cannot call impure function
+  699 |         return (
+  700 |           <div
+  701 |             key={proposal.id}  react-hooks/purity
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\agents\page.tsx
+  51:10  error  Error: Cannot access variable before it is declared
+
+`loadAgents` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\agents\page.tsx:51:10
+  49 |     }
+  50 |
+> 51 |     void loadAgents();
+     |          ^^^^^^^^^^ `loadAgents` accessed before it is declared
+  52 |   }, [session, status, router]);
+  53 |
+  54 |   const loadAgents = async () => {
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\agents\page.tsx:54:3
+  52 |   }, [session, status, router]);
+  53 |
+> 54 |   const loadAgents = async () => {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 55 |     try {
+     | ^^^^^^^^^
+> 56 |       const res = await fetch('/api/admin/agents', { credentials: 'include' });
+     …
+     | ^^^^^^^^^
+> 67 |     }
+     | ^^^^^^^^^
+> 68 |   };
+     | ^^^^^ `loadAgents` is declared here
+  69 |
+  70 |   const handleSubmit = async (e: React.FormEvent) => {
+  71 |     e.preventDefault();  react-hooks/immutability
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\catalogs\page.tsx
+  51:10  error  Error: Cannot access variable before it is declared
+
+`loadCatalogs` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\catalogs\page.tsx:51:10
+  49 |     }
+  50 |
+> 51 |     void loadCatalogs();
+     |          ^^^^^^^^^^^^ `loadCatalogs` accessed before it is declared
+  52 |   }, [session, status, router]);
+  53 |
+  54 |   const loadCatalogs = async () => {
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\catalogs\page.tsx:54:3
+  52 |   }, [session, status, router]);
+  53 |
+> 54 |   const loadCatalogs = async () => {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 55 |     try {
+     | ^^^^^^^^^
+> 56 |       const res = await fetch('/api/admin/catalogs', { credentials: 'include' });
+     …
+     | ^^^^^^^^^
+> 65 |     }
+     | ^^^^^^^^^
+> 66 |   };
+     | ^^^^^ `loadCatalogs` is declared here
+  67 |
+  68 |   const openCatalog = async (catalogId: string) => {
+  69 |     try {  react-hooks/immutability
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\logs\page.tsx
+  62:10  error  Error: Cannot access variable before it is declared
+
+`loadLogs` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\logs\page.tsx:62:10
+  60 |     }
+  61 |
+> 62 |     void loadLogs();
+     |          ^^^^^^^^ `loadLogs` accessed before it is declared
+  63 |   }, [session, status, router]);
+  64 |
+  65 |   const loadLogs = async () => {
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\logs\page.tsx:65:3
+  63 |   }, [session, status, router]);
+  64 |
+> 65 |   const loadLogs = async () => {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 66 |     try {
+     | ^^^^^^^^^
+> 67 |       const res = await fetch('/api/admin/logs', { credentials: 'include' });
+     …
+     | ^^^^^^^^^
+> 77 |     }
+     | ^^^^^^^^^
+> 78 |   };
+     | ^^^^^ `loadLogs` is declared here
+  79 |
+  80 |   if (status === 'loading' || !session) {
+  81 |     return <div className="p-8 text-slate-600">Chargement...</div>;  react-hooks/immutability
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\notifications\page.tsx
+  34:10  error  Error: Cannot access variable before it is declared
+
+`loadNotifications` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\notifications\page.tsx:34:10
+  32 |     }
+  33 |
+> 34 |     void loadNotifications();
+     |          ^^^^^^^^^^^^^^^^^ `loadNotifications` accessed before it is declared
+  35 |   }, [session, status, router]);
+  36 |
+  37 |   const loadNotifications = async () => {
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\notifications\page.tsx:37:3
+  35 |   }, [session, status, router]);
+  36 |
+> 37 |   const loadNotifications = async () => {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 38 |     try {
+     | ^^^^^^^^^
+> 39 |       const res = await fetch('/api/notifications', { credentials: 'include' });
+     …
+     | ^^^^^^^^^
+> 48 |     }
+     | ^^^^^^^^^
+> 49 |   };
+     | ^^^^^ `loadNotifications` is declared here
+  50 |
+  51 |   const markAllRead = async () => {
+  52 |     try {  react-hooks/immutability
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\settings\page.tsx
+  10:10  warning  'loading' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\subscriptions\page.tsx
+  45:10  error  Error: Cannot access variable before it is declared
+
+`loadSubscriptions` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\subscriptions\page.tsx:45:10
+  43 |     }
+  44 |
+> 45 |     void loadSubscriptions();
+     |          ^^^^^^^^^^^^^^^^^ `loadSubscriptions` accessed before it is declared
+  46 |   }, [session, status, router]);
+  47 |
+  48 |   const loadSubscriptions = async () => {
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\subscriptions\page.tsx:48:3
+  46 |   }, [session, status, router]);
+  47 |
+> 48 |   const loadSubscriptions = async () => {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 49 |     try {
+     | ^^^^^^^^^
+> 50 |       const res = await fetch('/api/admin/subscriptions', { credentials: 'include' });
+     …
+     | ^^^^^^^^^
+> 59 |     }
+     | ^^^^^^^^^
+> 60 |   };
+     | ^^^^^ `loadSubscriptions` is declared here
+  61 |
+  62 |   const updateStatus = async (userAgentId: string, nextStatus: string) => {
+  63 |     try {  react-hooks/immutability
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\tutorials\page.tsx
+  51:10  error  Error: Cannot access variable before it is declared
+
+`loadTutorials` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\tutorials\page.tsx:51:10
+  49 |     }
+  50 |
+> 51 |     void loadTutorials();
+     |          ^^^^^^^^^^^^^ `loadTutorials` accessed before it is declared
+  52 |   }, [session, status, router]);
+  53 |
+  54 |   const loadTutorials = async () => {
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\admin\tutorials\page.tsx:54:3
+  52 |   }, [session, status, router]);
+  53 |
+> 54 |   const loadTutorials = async () => {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 55 |     try {
+     | ^^^^^^^^^
+> 56 |       const res = await fetch('/api/admin/tutorials', { credentials: 'include' });
+     …
+     | ^^^^^^^^^
+> 65 |     }
+     | ^^^^^^^^^
+> 66 |   };
+     | ^^^^^ `loadTutorials` is declared here
+  67 |
+  68 |   const handleSubmit = async (e: React.FormEvent) => {
+  69 |     e.preventDefault();  react-hooks/immutability
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\api\products\import\route.ts
+  6:14  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\api\projects\[id]\items\[itemId]\client-provided\route.ts
+  18:13  warning  'isClientProvided' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\api\projects\[id]\route.ts
+  6:10  warning  'requireRole' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\api\user\agents\pay\route.ts
+  17:26  warning  'paymentMethodId' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\artisan\catalogue\page.tsx
+  24:9   warning  'router' is assigned a value but never used   @typescript-eslint/no-unused-vars
+  25:17  warning  'session' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\artisan\page.tsx
+    6:37  warning  'BadgeCheck' is defined but never used                      @typescript-eslint/no-unused-vars
+  124:10  warning  'hasActiveSubscription' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  282:9   warning  'getStatusBadge' is assigned a value but never used         @typescript-eslint/no-unused-vars
+  447:21  warning  'projectSummary' is assigned a value but never used         @typescript-eslint/no-unused-vars
+  448:21  warning  'proposedTotal' is assigned a value but never used          @typescript-eslint/no-unused-vars
+  453:21  warning  'depositAmount' is assigned a value but never used          @typescript-eslint/no-unused-vars
+  456:21  warning  'clientStatus' is assigned a value but never used           @typescript-eslint/no-unused-vars
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\artisan\projets\[id]\page.tsx
+  13:6  warning  'ProjectItem' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\artisan\projets\nouveau\page.tsx
+   93:10  warning  'loading' is assigned a value but never used     @typescript-eslint/no-unused-vars
+   93:19  warning  'setLoading' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  599:13  warning  'data' is assigned a value but never used        @typescript-eslint/no-unused-vars
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\demande\[categorie]\ProfessionalRequestFlow.tsx
+  46:9  warning  'fields' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\ia\analyse\page.tsx
+  14:10  warning  'selectedFile' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\partenaires\page.tsx
+    7:28  warning  'BriefcaseBusiness' is defined but never used           @typescript-eslint/no-unused-vars
+  151:9   warning  'createPartnership' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\vendeur\demandes\page.tsx
+  6:39  warning  'Mail' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\vendeur\page.tsx
+    9:3   warning  'Search' is defined but never used                    @typescript-eslint/no-unused-vars
+    9:38  warning  'Zap' is defined but never used                       @typescript-eslint/no-unused-vars
+    9:43  warning  'CheckCircle' is defined but never used               @typescript-eslint/no-unused-vars
+   10:3   warning  'XCircle' is defined but never used                   @typescript-eslint/no-unused-vars
+   10:12  warning  'Calendar' is defined but never used                  @typescript-eslint/no-unused-vars
+   11:16  warning  'LayoutDashboard' is defined but never used           @typescript-eslint/no-unused-vars
+   90:26  warning  'status' is assigned a value but never used           @typescript-eslint/no-unused-vars
+  117:10  warning  'catalogsLoading' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  440:14  warning  'error' is defined but never used                     @typescript-eslint/no-unused-vars
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\app\vendeur\projets\page.tsx
+   4:16  warning  'Eye' is defined but never used              @typescript-eslint/no-unused-vars
+   4:21  warning  'Package' is defined but never used          @typescript-eslint/no-unused-vars
+  26:9   warning  'router' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\hsabb\OneDrive\Desktop\akil bina b2b project\aqil-bina-app\messages\fr.ts
+  1:1  warning  Assign object to a variable before exporting as module default  import/no-anonymous-default-export
+
+✖ 50 problems (8 errors, 42 warnings)
+

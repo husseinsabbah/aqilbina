@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { AlertCircle, Lightbulb } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 
 type Suggestion = {
   type: "warning" | "info" | "suggestion" | "alternative";

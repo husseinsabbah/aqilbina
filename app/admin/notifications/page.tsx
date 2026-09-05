@@ -20,20 +20,6 @@ export default function AdminNotificationsPage() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (status === 'loading') return;
-    if (!session) {
-      router.push('/login');
-      return;
-    }
-    if (session.user.role !== 'admin') {
-      router.push('/dashboard');
-      return;
-    }
-
-    void loadNotifications();
-  }, [session, status, router]);
-
   const loadNotifications = async () => {
     try {
       const res = await fetch('/api/notifications', { credentials: 'include' });
@@ -47,6 +33,20 @@ export default function AdminNotificationsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (status === 'loading') return;
+    if (!session) {
+      router.push('/login');
+      return;
+    }
+    if (session.user.role !== 'admin') {
+      router.push('/dashboard');
+      return;
+    }
+
+    void loadNotifications();
+  }, [session, status, router]);
 
   const markAllRead = async () => {
     try {

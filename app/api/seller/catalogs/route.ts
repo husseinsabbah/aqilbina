@@ -52,7 +52,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Le nom est requis" }, { status: 400 });
     }
 
-    const finalName = normalizedName === "Catalogue Vendeur" ? "Catalogue Carrelage" : normalizedName;
+    const finalName = normalizedName;
 
     const existing = await prisma.catalog.findFirst({
       where: {

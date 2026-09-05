@@ -1,8 +1,6 @@
 "use client";
 
 import { useState, useEffect, FormEvent } from "react";
-import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
 import {
   Plus, Edit, Trash2, Search, Loader2, Upload, CheckCircle
 } from "lucide-react";
@@ -21,9 +19,6 @@ type Product = {
 };
 
 export default function CataloguePage() {
-  const router = useRouter();
-  const { data: session } = useSession();
-
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");

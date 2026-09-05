@@ -6,9 +6,8 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import {
   Package, Eye, Send, Store, Plus, Edit, Trash2,
-  Search, Loader2, Upload, Sparkles, Zap, CheckCircle,
-  XCircle, Calendar, Clock, TrendingUp, ArrowRight,
-  AlertCircle, LayoutDashboard, Download
+  Loader2, Upload, Sparkles, Clock, TrendingUp, ArrowRight,
+  AlertCircle, Download
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
@@ -87,7 +86,7 @@ type SectionType = "dashboard" | "catalogue" | "projets" | "offres" | "annonces"
 
 export default function VendeurPage() {
   const router = useRouter();
-  const { data: session, status } = useSession();
+  const { data: session } = useSession();
 
   // ===== ÉTATS =====
   const [products, setProducts] = useState<Product[]>([]);
@@ -95,29 +94,25 @@ export default function VendeurPage() {
   const [listings, setListings] = useState<Listing[]>([]);
   const [availableProjects, setAvailableProjects] = useState<AvailableProject[]>([]);
   const [loading, setLoading] = useState(true);
-  const [section, setSection] = useState<SectionType>("dashboard");
-  const [searchTerm, setSearchTerm] = useState("");
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const sectionParam = params.get("section") as SectionType | null;
-    const catalogParam = params.get("catalog");
-
-    if (sectionParam && ["dashboard", "catalogue", "projets", "offres", "annonces", "ia"].includes(sectionParam)) {
-      setSection(sectionParam);
-    }
-
-    if (catalogParam) {
-      setSelectedCatalogId(catalogParam);
-      setSection("catalogue");
-    }
-  }, []);
-  
-  // Catalogues & filtre
   const [catalogs, setCatalogs] = useState<Catalog[]>([]);
-  const [selectedCatalogId, setSelectedCatalogId] = useState<string | null>(null);
-  const [catalogsLoading, setCatalogsLoading] = useState(false);
+  const [selectedCatalogId, setSelectedCatalogId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("catalog");
+  });
+  const [section, setSection] = useState<SectionType>(() => {
+    if (typeof window === "undefined") return "dashboard";
 
+    const params = new URLSearchParams(window.location.search);
+    const catalogParam = params.get("catalog");
+    const sectionParam = params.get("section") as SectionType | null;
+
+    if (catalogParam) return "catalogue";
+    if (sectionParam && ["dashboard", "catalogue", "projets", "offres", "annonces", "ia"].includes(sectionParam)) {
+      return sectionParam;
+    }
+
+    return "dashboard";
+  });
   // Vérification agent actif
   const [hasActiveAgent, setHasActiveAgent] = useState<boolean | null>(null);
   const [checkingAgent, setCheckingAgent] = useState(true);
@@ -277,6 +272,56 @@ export default function VendeurPage() {
     }
   };
 
+  const cancelListing = async (id: string) => {
+    if (!window.confirm("Annuler cette annonce ? Elle ne sera plus visible pour les artisans.")) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/seller/listings/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ action: "cancel" }),
+      });
+
+      if (res.ok) {
+        await fetchListings();
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        console.error("Erreur cancelListing :", errorData);
+        alert(errorData.error || "Impossible d’annuler cette annonce.");
+      }
+    } catch (error) {
+      console.error("Erreur cancelListing :", error);
+      alert("Une erreur est survenue lors de l’annulation.");
+    }
+  };
+
+  const deleteListing = async (id: string) => {
+    if (!window.confirm("Supprimer définitivement cette annonce ?")) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/seller/listings/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (res.ok) {
+        await fetchListings();
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        console.error("Erreur deleteListing :", errorData);
+        alert(errorData.error || "Impossible de supprimer cette annonce.");
+      }
+    } catch (error) {
+      console.error("Erreur deleteListing :", error);
+      alert("Une erreur est survenue lors de la suppression.");
+    }
+  };
+
   const fetchAvailableProjects = async () => {
     try {
       const res = await fetch("/api/vendor/projects", { credentials: "include" });
@@ -290,16 +335,22 @@ export default function VendeurPage() {
   };
 
   const fetchCatalogs = async () => {
-    setCatalogsLoading(true);
     try {
       const res = await fetch("/api/seller/catalogs", { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
         setCatalogs(data);
 
+        const tradeName = (session?.user?.trade || "").trim();
         const preferredCatalog =
-          data.find((cat: Catalog) => cat.name === "Catalogue Carrelage") ||
-          (data.length === 1 ? data[0] : null);
+          (tradeName
+            ? data.find((cat: Catalog) => {
+                const normalizedName = cat.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+                const tradeNormalized = tradeName.toLowerCase().replace(/[^a-z0-9]/g, "");
+                return normalizedName.includes(tradeNormalized) || tradeNormalized.includes(normalizedName);
+              })
+            : null) ||
+          data[0] || null;
 
         if (preferredCatalog && !selectedCatalogId) {
           setSelectedCatalogId(preferredCatalog.id);
@@ -307,8 +358,6 @@ export default function VendeurPage() {
       }
     } catch (error) {
       console.error("Erreur chargement catalogues :", error);
-    } finally {
-      setCatalogsLoading(false);
     }
   };
 
@@ -382,7 +431,7 @@ export default function VendeurPage() {
       } else {
         setHasActiveAgent(false);
       }
-    } catch (error) {
+    } catch {
       setHasActiveAgent(false);
     } finally {
       setCheckingAgent(false);
@@ -760,6 +809,13 @@ export default function VendeurPage() {
     }
   };
 
+  const goToLowStockSource = (product?: Product) => {
+    if (product) {
+      setSelectedCatalogId(product.catalogId);
+    }
+    setSection("catalogue");
+  };
+
   // ===== CRÉATION D'ANNONCE =====
   const handleCreateListing = async (e: FormEvent) => {
     e.preventDefault();
@@ -827,14 +883,36 @@ export default function VendeurPage() {
         return (
           <div>
             {lowStockProducts.length > 0 && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-6 flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-red-600" />
-                <span className="text-sm text-red-700">
-                  ⚠️ {lowStockProducts.length} produit(s) en stock critique (&lt; 5 unités) :
-                  {lowStockProducts.slice(0, 3).map(p => (
-                    <span key={p.id} className="font-medium ml-1">{p.name}</span>
+              <div
+                onClick={() => goToLowStockSource(lowStockProducts[0])}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    goToLowStockSource(lowStockProducts[0]);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                className="w-full bg-red-50 border border-red-200 rounded-lg p-3 mb-6 flex items-center gap-2 text-left hover:bg-red-100 transition cursor-pointer outline-none focus:ring-2 focus:ring-red-200"
+              >
+                <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
+                <span className="text-sm text-red-700 flex flex-wrap items-center gap-1">
+                  <span>⚠️ {lowStockProducts.length} produit(s) en stock critique (&lt; 5 unités) :</span>
+                  {lowStockProducts.slice(0, 3).map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        goToLowStockSource(p);
+                      }}
+                      className="font-medium underline underline-offset-2 decoration-red-500 hover:text-red-900 bg-transparent p-0 border-0"
+                    >
+                      {p.name}
+                    </button>
                   ))}
-                  {lowStockProducts.length > 3 && <span className="ml-1">et {lowStockProducts.length - 3} autres</span>}
+                  {lowStockProducts.length > 3 && <span>et {lowStockProducts.length - 3} autres</span>}
+                  <span className="ml-1 text-red-600 font-semibold">→ Voir le catalogue concerné</span>
                 </span>
               </div>
             )}
@@ -1161,10 +1239,10 @@ export default function VendeurPage() {
                     <Trash2 className="w-4 h-4" /> Effacer tout
                   </button>
                   <button
-                    onClick={() => router.push("/vendeur/catalogues/nouveau")}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2 text-sm"
+                    onClick={() => router.push("/abonnement")}
+                    className="px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition flex items-center gap-2 text-sm"
                   >
-                    <Plus className="w-4 h-4" /> Nouveau catalogue
+                    <Plus className="w-4 h-4" /> Souscrire un agent
                   </button>
                 </div>
               </div>
@@ -1393,7 +1471,7 @@ export default function VendeurPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {listings.map(ann => (
                   <div key={ann.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-start gap-3">
                       <h3 className="font-medium">
                         {ann.product.name}
                         {ann.product.brand && <span className="text-sm text-gray-400 ml-1">({ann.product.brand})</span>}
@@ -1408,6 +1486,25 @@ export default function VendeurPage() {
                     {ann.endDate && <p className="text-sm text-gray-600">Fin de l’offre: {new Date(ann.endDate).toLocaleDateString()}</p>}
                     {ann.description && <p className="text-sm text-gray-500 mt-1">{ann.description}</p>}
                     <p className="text-xs text-gray-400 mt-1">Créée le {new Date(ann.createdAt).toLocaleDateString()}</p>
+
+                    <div className="flex gap-2 mt-3">
+                      {ann.isActive && (
+                        <button
+                          type="button"
+                          onClick={() => cancelListing(ann.id)}
+                          className="flex-1 text-xs bg-red-100 text-red-700 px-3 py-2 rounded hover:bg-red-200"
+                        >
+                          Annuler
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => deleteListing(ann.id)}
+                        className="flex-1 text-xs bg-gray-100 text-gray-700 px-3 py-2 rounded hover:bg-gray-200"
+                      >
+                        Supprimer
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1745,7 +1842,7 @@ export default function VendeurPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">URL de l'image</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">URL de l&apos;image</label>
                 <input
                   type="text"
                   placeholder="https://... ou /uploads/..."

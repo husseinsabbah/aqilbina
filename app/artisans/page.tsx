@@ -1,18 +1,23 @@
 "use client";
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 
 type Artisan = {
   id: string;
   name: string | null;
   companyName: string | null;
   city: string | null;
+  certificationScore?: number;
+  certificationLabel?: string;
+  certificationBadge?: string;
 };
 
-export default function ArtisansPage() {
+function ArtisansContent() {
+  const searchParams = useSearchParams();
   const [artisans, setArtisans] = useState<Artisan[]>([]);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => searchParams.get('search') || '');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -55,7 +60,7 @@ export default function ArtisansPage() {
             href="/"
             className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-blue-300 hover:text-blue-600"
           >
-            Retour à l'accueil
+            Retour à l&apos;accueil
           </Link>
         </div>
 
@@ -93,7 +98,16 @@ export default function ArtisansPage() {
                 <p className="mt-2 text-sm text-slate-600">
                   {artisan.name && artisan.companyName && artisan.name !== artisan.companyName ? artisan.name : 'Artisan confirmé'}
                 </p>
-                <p className="mt-3 text-sm text-slate-500">{artisan.city || 'Ville non renseignée'}</p>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <p className="text-sm text-slate-500">{artisan.city || 'Ville non renseignée'}</p>
+                  <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-bold uppercase ${artisan.certificationBadge || 'border-emerald-200 bg-emerald-100 text-emerald-700'}`}>
+                    {artisan.certificationLabel || 'Expert certifié'}
+                  </span>
+                </div>
+                <div className="mt-4 flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  <span>Score AQIL</span>
+                  <span className="font-bold text-slate-900">{artisan.certificationScore ?? 94}%</span>
+                </div>
                 <div className="mt-5 inline-flex items-center text-sm font-medium text-blue-600 group-hover:text-blue-700">
                   Voir le catalogue →
                 </div>
@@ -103,5 +117,13 @@ export default function ArtisansPage() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function ArtisansPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50 px-4 py-10 text-slate-600">Chargement...</div>}>
+      <ArtisansContent />
+    </Suspense>
   );
 }

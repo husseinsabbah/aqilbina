@@ -14,7 +14,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (!existing || existing.userId !== session.user.id) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
     }
-    const { surface, workType } = body;
+    const { surface, workType, applicableProjectTypes } = body;
     const computedCategory = body.serviceCategory || (surface && workType ? `${surface} - ${workType}` : existing.serviceCategory);
     const updated = await prisma.service.update({
       where: { id },
@@ -25,6 +25,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         unit: body.unit ?? existing.unit,
         unitPrice: body.unitPrice !== undefined ? parseFloat(body.unitPrice) : existing.unitPrice,
         isActive: body.isActive !== undefined ? body.isActive : existing.isActive,
+        applicableProjectTypes: applicableProjectTypes !== undefined
+          ? (Array.isArray(applicableProjectTypes) && applicableProjectTypes.length > 0 ? JSON.stringify(applicableProjectTypes) : null)
+          : existing.applicableProjectTypes,
       },
     });
     return NextResponse.json(updated);

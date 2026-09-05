@@ -6,7 +6,25 @@ import { prisma } from '@/lib/prisma';
 import { requireRole } from '@/lib/role-access';
 
 // ===== GET : Récupérer les projets de l’utilisateur connecté =====
-export async function GET() {
+function normalizePublicProjectUrl(projectId: string, url?: string | null) {
+  if (!url) return `http://localhost:3000/projets/${projectId}`;
+  const trimmed = url.trim();
+  const normalized = trimmed.replace(/\/$/, '');
+  if (normalized.includes('/undefined/projets/')) {
+    return normalized.replace(/\/undefined\/projets\//, '/projets/');
+  }
+  if (normalized.includes('/projets/')) {
+    return normalized;
+  }
+  return `${normalized}/projets/${projectId}`;
+}
+
+function getPublicBaseUrl(): string {
+  const rawBase = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || process.env.AUTH_URL || 'http://localhost:3000';
+  return rawBase.replace(/\/$/, '');
+}
+
+export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     const auth = requireRole(session, ['artisan'], 'Accès réservé aux artisans');
@@ -14,8 +32,22 @@ export async function GET() {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
+    const { searchParams } = new URL(request.url);
+    const q = (searchParams.get('q') || '').trim();
+
     const projects = await prisma.project.findMany({
-      where: { userId: session.user.id },
+      where: {
+        userId: session.user.id,
+        ...(q
+          ? {
+              OR: [
+                { clientName: { contains: q } },
+                { clientPhone: { contains: q } },
+                { clientEmail: { contains: q } },
+              ],
+            }
+          : {}),
+      },
       include: {
         items: {
           include: {
@@ -27,7 +59,10 @@ export async function GET() {
       orderBy: { createdAt: 'desc' },
     });
 
-    return NextResponse.json(projects);
+    return NextResponse.json(projects.map((project) => ({
+      ...project,
+      sharePublicUrl: normalizePublicProjectUrl(project.id, project.sharePublicUrl || `${getPublicBaseUrl()}/projets/${project.id}`),
+    })));
   } catch (error) {
     console.error('GET /api/projects error:', error);
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });
@@ -78,7 +113,15 @@ export async function POST(request: NextRequest) {
       ? items.filter((item: any) => item && (item.productId || item.serviceId))
       : [];
 
-    if (!name || validItems.length === 0) {
+    const deduplicatedItems = validItems.filter((item: any, index: number, arr: any[]) => {
+      const key = item.productId ? `product:${item.productId}` : `service:${item.serviceId}`;
+      return arr.findIndex((candidate) => {
+        const candidateKey = candidate.productId ? `product:${candidate.productId}` : `service:${candidate.serviceId}`;
+        return candidateKey === key;
+      }) === index;
+    });
+
+    if (!name || deduplicatedItems.length === 0) {
       return NextResponse.json(
         { error: 'Nom et au moins un item (produit ou service) sont obligatoires' },
         { status: 400 }
@@ -108,13 +151,14 @@ export async function POST(request: NextRequest) {
     });
 
     // Préparer les items (produits et services)
-    const projectItems = await Promise.all(validItems.map(async (item: any) => {
+    const projectItems = await Promise.all(deduplicatedItems.map(async (item: any) => {
       if (item.productId) {
         const productId = String(item.productId);
 
-        const existingProduct = await prisma.product.findUnique({ where: { id: productId } });
-        const createdProduct = existingProduct ?? await prisma.product.create({
-          data: {
+        const createdProduct = await prisma.product.upsert({
+          where: { id: productId },
+          update: {},
+          create: {
             id: productId,
             userId: session.user.id,
             catalogId: defaultCatalog.id,
@@ -139,9 +183,10 @@ export async function POST(request: NextRequest) {
       if (item.serviceId) {
         const serviceId = String(item.serviceId);
 
-        const existingService = await prisma.service.findUnique({ where: { id: serviceId } });
-        const createdService = existingService ?? await prisma.service.create({
-          data: {
+        const createdService = await prisma.service.upsert({
+          where: { id: serviceId },
+          update: {},
+          create: {
             id: serviceId,
             userId: session.user.id,
             name: String(item.name || 'Prestation demandée').trim() || 'Prestation demandée',
@@ -176,6 +221,7 @@ export async function POST(request: NextRequest) {
         status: status && ['BROUILLON', 'PUBLIE', 'EN_COURS', 'EN_ATTENTE'].includes(status)
           ? status
           : 'PUBLIE',
+        sharePublicUrl: `${getPublicBaseUrl()}/projets/${Date.now()}`,
         items: {
           create: projectItems,
         },
@@ -183,7 +229,15 @@ export async function POST(request: NextRequest) {
       include: { items: true },
     });
 
-    return NextResponse.json(project, { status: 201 });
+    const finalProject = await prisma.project.update({
+      where: { id: project.id },
+      data: {
+        sharePublicUrl: `${getPublicBaseUrl()}/projets/${project.id}`,
+      },
+      include: { items: true },
+    });
+
+    return NextResponse.json(finalProject, { status: 201 });
   } catch (error) {
     console.error('POST /api/projects error:', error);
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });

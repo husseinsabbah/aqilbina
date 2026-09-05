@@ -104,6 +104,15 @@ export default async function ClientPage({
     )
   );
 
+  const professionalLabel = (() => {
+    const raw = (artisan.role || artisan.trade || 'professionnel').toLowerCase();
+    if (['vendeur', 'seller', 'vendor'].some((word) => raw.includes(word))) return 'vendeur';
+    if (['usine', 'manufacturer', 'fabricant', 'fournisseur', 'supplier'].some((word) => raw.includes(word))) return 'usine';
+    if (['artisan', 'craftsman', 'maitre artisan', 'maître artisan'].some((word) => raw.includes(word))) return 'artisan';
+    if (['promoteur', 'promoter', 'developpeur', 'constructeur'].some((word) => raw.includes(word))) return 'promoteur';
+    return 'professionnel';
+  })();
+
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-10">
       <div className="mx-auto max-w-6xl">
@@ -229,6 +238,8 @@ export default async function ClientPage({
             artisanName={artisan.companyName || artisan.name || 'Artisan'}
             trade={artisan.trade || 'carreleur'}
             availableTrades={availableTrades}
+            professionalLabel={professionalLabel}
+            targetRole={(artisan.role || 'artisan') as 'artisan' | 'vendeur' | 'promoteur'}
             defaultValues={{
               clientName: connectedUser?.name ?? '',
               clientPhone: connectedUser?.phone ?? '',

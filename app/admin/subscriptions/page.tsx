@@ -31,20 +31,6 @@ export default function AdminSubscriptionsPage() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (status === 'loading') return;
-    if (!session) {
-      router.push('/login');
-      return;
-    }
-    if (session.user.role !== 'admin') {
-      router.push('/dashboard');
-      return;
-    }
-
-    void loadSubscriptions();
-  }, [session, status, router]);
-
   const loadSubscriptions = async () => {
     try {
       const res = await fetch('/api/admin/subscriptions', { credentials: 'include' });
@@ -58,6 +44,20 @@ export default function AdminSubscriptionsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (status === 'loading') return;
+    if (!session) {
+      router.push('/login');
+      return;
+    }
+    if (session.user.role !== 'admin') {
+      router.push('/dashboard');
+      return;
+    }
+
+    void loadSubscriptions();
+  }, [session, status, router]);
 
   const updateStatus = async (userAgentId: string, nextStatus: string) => {
     try {

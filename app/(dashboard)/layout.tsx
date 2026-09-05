@@ -11,7 +11,6 @@ import {
   Settings,
   LogOut,
   Store,
-  Shield,
 } from "lucide-react";
 
 export default function DashboardLayout({
@@ -41,27 +40,47 @@ export default function DashboardLayout({
     return null;
   }
 
-  const navItems = [
-    { name: "Tableau de bord", href: "/dashboard", icon: LayoutDashboard },
-    { name: "Catalogue", href: "/catalogue", icon: Package },
-    { name: "Projets", href: "/projets", icon: FolderKanban },
-    { name: "Projets artisans", href: "/vendeur/projets", icon: FolderKanban },
-    { name: "Vendeur", href: "/vendeur", icon: Store },
-    { name: "Paramètres", href: "/parametres", icon: Settings },
-    ...(session.user.role === 'admin'
-      ? [{ name: "Admin", href: "/admin", icon: Shield }]
-      : []),
-  ];
+  const currentRole = (session.user.role || session.user.trade || "artisan").toLowerCase();
+  const profileType = currentRole.includes("vendeur") ? "vendeur" : currentRole.includes("promoteur") ? "promoteur" : "artisan";
+
+  const staticMenuByProfile: Record<string, Array<{ name: string; href: string; icon: typeof LayoutDashboard }>> = {
+    artisan: [
+      { name: "Tableau de bord", href: "/dashboard", icon: LayoutDashboard },
+      { name: "Catalogue", href: "/artisan/catalogue", icon: Package },
+      { name: "Projets", href: "/artisan/projets", icon: FolderKanban },
+      { name: "Demandes de devis", href: "/artisan/demandes", icon: Package },
+      { name: "Offres reçues", href: "/artisan/offres", icon: Package },
+      { name: "Portfolio", href: "/artisan/portfolio", icon: Store },
+      { name: "Partenaires", href: "/partenaires", icon: Store },
+      { name: "Paramètres", href: "/parametres", icon: Settings },
+    ],
+    vendeur: [
+      { name: "Tableau de bord", href: "/dashboard", icon: LayoutDashboard },
+      { name: "Catalogue", href: "/vendeur?section=catalogue", icon: Package },
+      { name: "Projets disponibles", href: "/vendeur/projets", icon: FolderKanban },
+      { name: "Demandes de devis", href: "/vendeur/demandes", icon: FolderKanban },
+      { name: "Offres envoyées", href: "/vendeur?section=offres", icon: Store },
+      { name: "Annonces", href: "/vendeur?section=annonces", icon: Store },
+      { name: "Assistant IA", href: "/vendeur?section=ia", icon: Store },
+      { name: "Partenaires", href: "/partenaires", icon: Store },
+      { name: "Paramètres", href: "/parametres", icon: Settings },
+    ],
+    promoteur: [
+      { name: "Tableau de bord", href: "/dashboard", icon: LayoutDashboard },
+      { name: "Programmes", href: "/promoteur/programmes", icon: FolderKanban },
+      { name: "Lots suivis", href: "/promoteur/lots", icon: Package },
+      { name: "Entreprises actives", href: "/promoteur/entreprises", icon: Store },
+      { name: "Partenaires", href: "/partenaires", icon: Store },
+      { name: "Paramètres", href: "/parametres", icon: Settings },
+    ],
+  };
+
+  const navItems = staticMenuByProfile[profileType] ?? staticMenuByProfile.artisan;
 
   return (
     <div className="flex h-screen bg-gray-50">
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-6 border-b border-gray-200">
-          <h1 className="text-2xl font-bold text-blue-600">🏗️ Aqil Bina</h1>
-          <p className="text-xs text-gray-400">Artisan Back Office</p>
-        </div>
-
         <nav aria-label="Menu principal" className="flex-1 p-4 space-y-1">
           {navItems.map((item) => {
             const isActive = pathname === item.href;

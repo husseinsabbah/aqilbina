@@ -7,7 +7,6 @@ import { useRouter } from 'next/navigation';
 export default function AdminSettingsPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
-  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({
     siteName: 'Aqil Bina',
     contactEmail: 'support@aqilbina.com',
@@ -22,9 +21,7 @@ export default function AdminSettingsPage() {
     }
     if (session.user.role !== 'admin') {
       router.push('/dashboard');
-      return;
     }
-    setLoading(false);
   }, [session, status, router]);
 
   const handleSubmit = (e: React.FormEvent) => {

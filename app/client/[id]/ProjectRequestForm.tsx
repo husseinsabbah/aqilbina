@@ -19,9 +19,9 @@ const FieldHelp = ({ children }: { children: React.ReactNode }) => {
         ℹ
       </span>
       {isOpen && (
-        <div className="absolute left-0 top-6 z-20 w-64 rounded-lg bg-gray-800 p-2.5 text-xs text-white shadow-lg">
+        <span className="absolute left-0 top-6 z-20 block w-64 rounded-lg bg-gray-800 p-2.5 text-xs leading-relaxed text-white shadow-lg">
           {children}
-        </div>
+        </span>
       )}
     </span>
   );
@@ -140,13 +140,89 @@ export default function ProjectRequestForm({
   // ============================================================
   // MÉTIERS SÉLECTIONNÉS
   // ============================================================
-  const [selectedTrades, setSelectedTrades] = useState<string[]>(() => (trade ? [trade] : []));
+  const roleTradeOptions = useMemo(
+    () => ({
+      artisan: [
+        { value: "plomberie", label: "Plombier", icon: "💧", description: "Pose, remplacement et dépannage de tuyauteries, sanitaires et installations de plomberie." },
+        { value: "carrelage", label: "Carreleur", icon: "🧱", description: "Pose de carrelage sur sol ou mur, joints, finitions et revêtements de chantier." },
+        { value: "electricite", label: "Électricien", icon: "⚡", description: "Câblage, prises, tableaux, éclairage, domotique et mise aux normes électriques." },
+        { value: "peinture", label: "Peintre", icon: "🎨", description: "Préparation, sous-couches, peinture intérieure et finition des surfaces." },
+        { value: "menuiserie", label: "Menuisier", icon: "🪚", description: "Portes, fenêtres, agencement, menuiserie intérieure et extérieure, aluminium inclus." },
+        { value: "maçonnerie", label: "Maçon", icon: "🧱", description: "Murs, briques, enduits, structures, reprises lourdes et gros œuvre." },
+        { value: "chauffage", label: "Chauffagiste", icon: "🌡️", description: "Radiateurs, chaudières, ventilation, pompe à chaleur et installations de chauffage." },
+        { value: "sanitaire", label: "Installateur sanitaire", icon: "🚿", description: "Lavabos, WC, douches, baignoires, évacuation et équipements sanitaires." },
+        { value: "isolation", label: "Isolationneur", icon: "🛡️", description: "Thermique, phonique, laine, polystyrène, étanchéité et protection du bâtiment." },
+        { value: "jardin-terrasse", label: "Paysagiste / Aménagement extérieur", icon: "🌿", description: "Terrasse, dallage extérieur, clôture, aménagement paysager et finitions extérieures." },
+      ],
+      vendeur: [
+        { value: "carrelage", label: "Carrelage", icon: "🧱", description: "Carrelage, joints, carreaux, colle et revêtements de sol et mur." },
+        { value: "peinture", label: "Peinture", icon: "🎨", description: "Peintures, sous-couches, enduits, mastics et produits de finition." },
+        { value: "plomberie", label: "Plomberie", icon: "💧", description: "Tuyaux, robinets, raccords, canalisations et éléments sanitaires." },
+        { value: "chauffage", label: "Chauffage", icon: "🌡️", description: "Radiateurs, chaudières, pompes à chaleur, VMC et solutions de chauffage." },
+        { value: "isolation", label: "Isolation", icon: "🛡️", description: "Laine, polystyrène, étanchéité et matériaux de protection thermique." },
+        { value: "jardin-terrasse", label: "Jardin / Terrasse", icon: "🌿", description: "Bois extérieur, dalles, clôtures, gazon et aménagement paysager." },
+        { value: "electricite", label: "Électricité", icon: "⚡", description: "Câbles, prises, interrupteurs, tableaux, éclairage et équipements électriques." },
+        { value: "sanitaire", label: "Sanitaire", icon: "🚿", description: "Lavabos, WC, douches, baignoires, évacuation et accessoires sanitaires." },
+        { value: "menuiserie", label: "Menuiserie", icon: "🪚", description: "Portes, fenêtres, aluminium, agencement et accessoires de menuiserie." },
+        { value: "materiaux-gros-oeuvre", label: "Matériaux / Gros œuvre", icon: "🏗️", description: "Briques, parpaings, ciment, fer, béton et matériaux de structure." },
+      ],
+      promoteur: [
+        { value: "promotion-immobiliere", label: "Promoteur", icon: "🏠", description: "Pilote le programme, fixe les priorités, valide les offres et organise le projet." },
+        { value: "gestion-chantier", label: "Gestionnaire de chantier", icon: "📋", description: "Coordonne le planning, le suivi et la logistique opérationnelle du chantier." },
+        { value: "maitrise-oeuvre", label: "Maîtrise d’œuvre", icon: "🧭", description: "Conception, pilotage technique et coordination des équipes de projet." },
+        { value: "coordination-travaux", label: "Coordination travaux", icon: "🛠️", description: "Organise les interventions, synchronise les corps de métier et planifie les étapes." },
+        { value: "amenagement", label: "Pilotage de projet", icon: "🧱", description: "Supervise l’aménagement, les choix techniques et les livrables du chantier." },
+      ],
+    }),
+    []
+  );
+
+  const visibleTradeOptions = useMemo(() => {
+    if (resolvedTargetRole === "vendeur") return roleTradeOptions.vendeur;
+    if (resolvedTargetRole === "artisan") return roleTradeOptions.artisan;
+    if (resolvedTargetRole === "promoteur") return roleTradeOptions.promoteur;
+    return [...roleTradeOptions.artisan, ...roleTradeOptions.vendeur, ...roleTradeOptions.promoteur];
+  }, [resolvedTargetRole, roleTradeOptions]);
+
+  const shouldAutoSelectFirstTrade = !broadcastMode && resolvedTargetRole !== "all" && visibleTradeOptions.length > 0;
+
+  const [selectedTrades, setSelectedTrades] = useState<string[]>(() => {
+    if (trade && trade !== "general") return [trade];
+    if (broadcastMode || resolvedTargetRole === "all") return [];
+    if (resolvedTargetRole === "vendeur") return [roleTradeOptions.vendeur[0].value];
+    if (resolvedTargetRole === "artisan") return [roleTradeOptions.artisan[0].value];
+    if (resolvedTargetRole === "promoteur") return [roleTradeOptions.promoteur[0].value];
+    return [];
+  });
+
+  useEffect(() => {
+    const allowedValues = new Set(visibleTradeOptions.map((option) => option.value));
+    const validSelected = selectedTrades.filter((value) => allowedValues.has(value));
+
+    if (validSelected.length > 0) {
+      const hasChanged = validSelected.length !== selectedTrades.length || validSelected.some((value, index) => value !== selectedTrades[index]);
+      if (hasChanged) {
+        setSelectedTrades(validSelected);
+      }
+      return;
+    }
+
+    if (!shouldAutoSelectFirstTrade) return;
+
+    setSelectedTrades([visibleTradeOptions[0].value]);
+  }, [visibleTradeOptions, selectedTrades, shouldAutoSelectFirstTrade]);
 
   // ============================================================
   // RÈGLES MÉTIER (simplifié)
   // ============================================================
   const projectTypeOptions = useMemo(
-    () => ["Rénovation", "Construction neuve", "Agrandissement", "Aménagement", "Dépannage"],
+    () => [
+      "Rénovation",
+      "Construction neuve",
+      "Agrandissement",
+      "Aménagement",
+      "Dépannage",
+    ],
     []
   );
 
@@ -251,11 +327,22 @@ export default function ProjectRequestForm({
 
     try {
       const piecesArray = Object.values(piecesData).filter((p) => p.solSurface || p.murSurface || p.hauteur);
+      const tradeDetails = selectedTrades.map((value) => {
+        const option = visibleTradeOptions.find((item) => item.value === value);
+        return {
+          value,
+          label: option?.label ?? value,
+        };
+      });
 
       const payload = {
         artisanId,
+        targetRole: resolvedTargetRole,
+        targetTrades: tradeDetails,
+        tradeValues: selectedTrades,
+        tradeLabels: tradeDetails.map((item) => item.label),
         professionalRole: resolvedTargetRole,
-        professionalTrade: trade,
+        professionalTrade: trade && trade !== "general" ? trade : selectedTrades[0] ?? resolvedTargetRole,
         selectedTrades,
         clientName: form.clientName,
         clientPhone: form.clientPhone,
@@ -271,6 +358,30 @@ export default function ProjectRequestForm({
         pieces: piecesArray,
         desiredStartDate: form.desiredStartDate || null,
         desiredEndDate: form.desiredEndDate || null,
+        projectInfo: {
+          name: form.projectName,
+          type: form.projectType,
+          workType: form.workType || null,
+          description: form.description,
+          budgetEstimate: form.budgetEstimate ? Number(form.budgetEstimate) : null,
+        },
+        siteInfo: {
+          batiment: form.batiment,
+          chantiers: chantiersSelectionnes,
+          pieces: piecesArray,
+        },
+        clientInfo: {
+          name: form.clientName,
+          phone: form.clientPhone,
+          email: form.clientEmail,
+          address: form.clientAddress,
+        },
+        contextMetadata: {
+          broadcastMode: broadcastMode || artisanId === "broadcast",
+          source: "public-form",
+          role: resolvedTargetRole,
+          selectedTrades: selectedTrades,
+        },
       };
 
       const formData = new FormData();
@@ -436,11 +547,15 @@ export default function ProjectRequestForm({
                 onChange={(e) => handleChange("projectType", e.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-800 outline-none focus:border-blue-500"
               >
-                {projectTypeOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
+                <option value="">Sélectionner un type de projet</option>
+                <option value="Rénovation">Rénovation</option>
+                {projectTypeOptions
+                  .filter((option) => option !== "Rénovation")
+                  .map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
               </select>
             </div>
 
@@ -496,14 +611,7 @@ export default function ProjectRequestForm({
           </FieldHelp>
         </p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            { value: "plombier", label: "Plomberie", icon: "💧" },
-            { value: "carreleur", label: "Carrelage", icon: "🧱" },
-            { value: "electricien", label: "Électricité", icon: "⚡" },
-            { value: "peintre", label: "Peinture", icon: "🎨" },
-            { value: "menuisier", label: "Menuiserie", icon: "🪚" },
-            { value: "maçon", label: "Maçonnerie", icon: "🧱" },
-          ].map((tradeItem) => {
+          {visibleTradeOptions.map((tradeItem) => {
             const checked = selectedTrades.includes(tradeItem.value);
             return (
               <label
@@ -511,6 +619,7 @@ export default function ProjectRequestForm({
                 className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 transition ${
                   checked ? "border-blue-500 bg-blue-100" : "border-gray-200 bg-white hover:border-blue-200"
                 }`}
+                title={tradeItem.description}
               >
                 <input
                   type="checkbox"
@@ -519,7 +628,10 @@ export default function ProjectRequestForm({
                   className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="text-lg">{tradeItem.icon}</span>
-                <span className="text-sm font-medium text-gray-700">{tradeItem.label}</span>
+                <span className="flex items-center gap-1 text-sm font-medium text-gray-700">
+                  {tradeItem.label}
+                  <FieldHelp>{tradeItem.description}</FieldHelp>
+                </span>
               </label>
             );
           })}

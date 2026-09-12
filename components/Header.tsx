@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, LogOut, Menu, User, X } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
-import { getLocaleFromStorage, messages, type Locale } from "@/lib/i18n";
+import { defaultLocale, getLocaleFromStorage, messages, type Locale } from "@/lib/i18n";
 
 const menuItems = [
   { key: "home", href: "/" },
@@ -46,16 +46,20 @@ export default function Header() {
   const [mounted, setMounted] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openMobileGroup, setOpenMobileGroup] = useState<string | null>(null);
-  const [locale] = useState<Locale>(() => getLocaleFromStorage());
+  const [locale, setLocaleState] = useState<Locale>(defaultLocale);
 
   useEffect(() => {
     setMounted(true);
+    setLocaleState(getLocaleFromStorage());
   }, []);
 
-  const dict = messages[locale];
+  const effectiveLocale = mounted ? locale : defaultLocale;
+  const dict = messages[effectiveLocale];
   const user = session?.user;
   const displayName = user?.companyName || user?.name || "Artisan";
-  const isAuthenticated = mounted && status === "authenticated";
+  const authReady = mounted && status !== "loading";
+  const isAuthenticated = authReady && status === "authenticated";
+  const renderGuestActions = !mounted || !authReady || !isAuthenticated;
 
   const handleSignOut = async () => {
     await signOut({ callbackUrl: "/", redirect: true });
@@ -64,8 +68,8 @@ export default function Header() {
 
   return (
     <Fragment>
-    <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur-sm">
-      <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur-sm" suppressHydrationWarning>
+      <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8" suppressHydrationWarning>
         <button onClick={() => router.push("/")} className="flex items-center gap-2 text-xl font-black text-slate-900">
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-lg shadow-md shadow-emerald-200">🏗️</span>
           <span className="text-2xl font-black tracking-tight text-blue-700">Aqil Bina</span>
@@ -116,7 +120,7 @@ export default function Header() {
             Assistant IA
           </button>
           <LocaleSwitcher />
-          {!mounted ? (
+          {renderGuestActions ? (
             <>
               <button
                 onClick={() => router.push("/auth/signin")}
@@ -224,7 +228,7 @@ export default function Header() {
           </div>
 
           <div className="mt-4 flex gap-3">
-            {!mounted ? (
+            {renderGuestActions ? (
               <>
                 <button
                   onClick={() => router.push("/auth/signin")}

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { ShieldCheck, Users, FolderKanban, Sparkles, ArrowRight, Plus, UserCog, FileText } from 'lucide-react';
+import { ADMIN_MANAGED_ROLES } from '@/lib/role-access';
 
 type AdminUser = {
   id: string;
@@ -62,6 +63,10 @@ export default function AdminPage() {
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
   const [partnerships, setPartnerships] = useState<PartnershipReview[]>([]);
   const [newAdmin, setNewAdmin] = useState({ name: '', email: '', password: '', role: 'admin' });
+  const roleOptions = ADMIN_MANAGED_ROLES.map((role) => ({
+    value: role,
+    label: role,
+  }));
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -307,6 +312,17 @@ export default function AdminPage() {
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-blue-500"
                 required
               />
+              <select
+                value={newAdmin.role}
+                onChange={(e) => setNewAdmin({ ...newAdmin, role: e.target.value })}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-blue-500"
+              >
+                {roleOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
               <div className="flex items-center justify-between">
                 <button
                   type="submit"
@@ -446,8 +462,11 @@ export default function AdminPage() {
                           onChange={(e) => handleRoleChange(user.id, e.target.value)}
                           className="rounded border border-slate-200 px-2 py-1 text-xs"
                         >
-                          <option value="user">user</option>
-                          <option value="admin">admin</option>
+                          {roleOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
                         </select>
                       </td>
                     </tr>

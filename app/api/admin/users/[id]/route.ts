@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth/next';
 
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { ADMIN_MANAGED_ROLES } from '@/lib/role-access';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -18,14 +19,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const { id } = await params;
     const body = await request.json();
     const { role } = body ?? {};
+    const normalizedRole = typeof role === 'string' ? role.trim().toLowerCase() : '';
 
-    if (!role || !['user', 'admin'].includes(role)) {
+    if (!normalizedRole || !ADMIN_MANAGED_ROLES.includes(normalizedRole as (typeof ADMIN_MANAGED_ROLES)[number])) {
       return NextResponse.json({ error: 'Rôle invalide' }, { status: 400 });
     }
 
     const updatedUser = await prisma.user.update({
       where: { id },
-      data: { role },
+      data: { role: normalizedRole },
       select: { id: true, email: true, name: true, role: true },
     });
 

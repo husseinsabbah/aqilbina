@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth/next';
 
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { ADMIN_MANAGED_ROLES } from '@/lib/role-access';
 
 export async function GET() {
   try {
@@ -49,9 +50,14 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const { email, name, password, role } = body ?? {};
+    const normalizedRole = typeof role === 'string' ? role.trim().toLowerCase() : '';
 
     if (!email || !name || !password) {
       return NextResponse.json({ error: 'Email, nom et mot de passe requis' }, { status: 400 });
+    }
+
+    if (!normalizedRole || !ADMIN_MANAGED_ROLES.includes(normalizedRole as (typeof ADMIN_MANAGED_ROLES)[number])) {
+      return NextResponse.json({ error: 'Rôle invalide' }, { status: 400 });
     }
 
     const existingUser = await prisma.user.findUnique({ where: { email } });
@@ -67,7 +73,7 @@ export async function POST(request: Request) {
         email,
         name,
         password: hashedPassword,
-        role: role === 'admin' ? 'admin' : 'user',
+        role: normalizedRole,
       },
     });
 
@@ -105,14 +111,15 @@ export async function PATCH(request: Request) {
 
     const body = await request.json();
     const { userId, role } = body ?? {};
+    const normalizedRole = typeof role === 'string' ? role.trim().toLowerCase() : '';
 
-    if (!userId || !role || !['user', 'admin'].includes(role)) {
+    if (!userId || !normalizedRole || !ADMIN_MANAGED_ROLES.includes(normalizedRole as (typeof ADMIN_MANAGED_ROLES)[number])) {
       return NextResponse.json({ error: 'userId et rôle valides requis' }, { status: 400 });
     }
 
     const updatedUser = await prisma.user.update({
       where: { id: userId },
-      data: { role },
+      data: { role: normalizedRole },
       select: { id: true, email: true, name: true, role: true },
     });
 

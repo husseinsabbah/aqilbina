@@ -508,7 +508,7 @@ export default function ArtisanRequestsPage() {
           <div className="mb-8">
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-600">Espace artisan</p>
             <h1 className="mt-2 text-3xl font-bold text-gray-900">Demandes de devis reçues</h1>
-            <p className="mt-2 text-gray-600">Répondez aux demandes correspondant à votre spécialité.</p>
+            <p className="mt-2 text-gray-600">Répondez aux demandes correspondant à votre spécialité. La page affiche les informations utiles pour traiter la demande et cache les éléments internes de plateforme.</p>
           </div>
 
           {error && <div className="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}

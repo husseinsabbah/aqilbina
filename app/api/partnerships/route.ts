@@ -82,6 +82,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const targetUserId = String(body?.targetUserId ?? '').trim();
     const targetRole = normalizeRole(body?.targetRole ?? '');
+    const hiddenCommissionPercent = Number(body?.hiddenCommissionPercent ?? body?.commissionPercent ?? body?.commission ?? 0);
+    const internalNotes = String(body?.internalNotes ?? body?.notes ?? '').trim();
+    const projectId = String(body?.projectId ?? '').trim();
 
     if (!targetUserId || !targetRole) {
       return NextResponse.json({ error: 'Profil cible et rôle requis' }, { status: 400 });
@@ -125,6 +128,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Une demande ou un partenariat existe déjà avec ce profil' }, { status: 409 });
     }
 
+    const internalMetadata = {
+      projectId: projectId || null,
+      internalOnly: true,
+      hiddenCommissionPercent: Number.isFinite(hiddenCommissionPercent) ? hiddenCommissionPercent : 0,
+      internalNotes: internalNotes || null,
+      createdBy: session.user.id,
+      createdAt: new Date().toISOString(),
+    };
+
     const partnership = await prisma.partnership.create({
       data: {
         initiatorId: session.user.id,
@@ -132,6 +144,13 @@ export async function POST(request: NextRequest) {
         targetRole,
         status: 'PENDING',
         evaluationStatus: 'PENDING',
+        notes: internalNotes || (Number.isFinite(hiddenCommissionPercent) && hiddenCommissionPercent > 0
+          ? JSON.stringify({
+              internalOnly: true,
+              hiddenCommissionPercent,
+              projectId: projectId || null,
+            })
+          : JSON.stringify(internalMetadata)),
       },
       include: {
         initiator: { select: { id: true, name: true, email: true, role: true, trade: true, companyName: true } },

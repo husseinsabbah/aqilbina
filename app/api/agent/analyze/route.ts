@@ -4,6 +4,7 @@ import OpenAI from 'openai';
 
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { resolveProfileDispatch } from '@/lib/ia-profile-router';
 
 type AnalysisResponse = {
   summary: string;
@@ -346,6 +347,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Accès interdit' }, { status: 403 });
     }
 
+    const metadata = project.metadata && typeof project.metadata === 'object' ? (project.metadata as Record<string, unknown>) : {};
+    const projectProfileValue =
+      typeof metadata.professionalRole === 'string'
+        ? metadata.professionalRole
+        : typeof metadata.targetRole === 'string'
+          ? metadata.targetRole
+          : 'artisan';
+
+    const projectSelectedTrades = Array.isArray(metadata.selectedTrades)
+      ? metadata.selectedTrades.filter((value): value is string => typeof value === 'string')
+      : [];
+
+    const dispatch = resolveProfileDispatch(
+      {
+        ...project,
+        profile: projectProfileValue,
+        selectedTrades: projectSelectedTrades,
+      },
+      'artisan'
+    );
+
     const activeUserAgents = await prisma.userAgent.findMany({
       where: {
         userId: session.user.id,
@@ -387,18 +409,39 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    const profileRoleLabel =
+      dispatch.profile === 'vendeur'
+        ? 'Assistant vendeur spécialisé'
+        : dispatch.profile === 'promoteur'
+          ? 'Assistant promoteur spécialisé'
+          : 'Assistant artisan spécialisé';
+
+    const effectiveConfig = {
+      role: isSupervisorMode ? 'Superviseur IA de devis' : profileRoleLabel,
+      tone: 'professionnel, utile, précis, orienté devis',
+      systemPrompt: `${dispatch.systemPrompt} Tu dois travailler uniquement avec les métiers sélectionnés : ${dispatch.selectedTrades.length ? dispatch.selectedTrades.join(', ') : 'tous métiers'} . Tu n’inclus jamais des métiers hors sélection.`,
+      rules: [
+        ...dispatch.constraints,
+        'Tu ne mélange jamais le métier sélectionné avec un autre métier.',
+        'Tu restes strictement dans le périmètre des métiers sélectionnés et des données du projet.',
+        'Tu rejettes les produits hors catalogue.',
+        'Tu ne donnes pas des prix ou stocks inventés.',
+        'Tu calcules les quantités à partir des dimensions et des prestations.',
+        'Si une information manque, pose une question.',
+        'Réponds uniquement en JSON.',
+      ].join('\n'),
+    };
+
     if (!config) {
       config = await prisma.assistantConfig.create({
         data: {
           userId: session.user.id,
           agentId: selectedUserAgent.agentId,
           name: `${selectedUserAgent.agent.name} Assistant`,
-          role: isSupervisorMode ? 'Superviseur IA de devis' : 'Assistant expert métier',
-          tone: 'professionnel, utile, précis, orienté devis',
-          systemPrompt:
-            'Tu es un assistant expert qui aide un artisan à préparer un devis réaliste à partir des infos du projet, des dimensions et des services du professionnel. Tu ne proposes que des produits du catalogue du professionnel et tu restes dans le contexte du projet.',
-          rules:
-            'Tu rejettes les produits hors catalogue. Tu ne donnes pas des prix ou stocks inventés. Tu calcules les quantités à partir des dimensions et des prestations. Si une information manque, pose une question. Réponds uniquement en JSON.',
+          role: effectiveConfig.role,
+          tone: effectiveConfig.tone,
+          systemPrompt: effectiveConfig.systemPrompt,
+          rules: effectiveConfig.rules,
           isActive: true,
         },
       });
@@ -461,10 +504,10 @@ export async function POST(request: NextRequest) {
         keywords: tutorial.keywords,
       })),
       config: {
-        role: config.role,
-        tone: config.tone,
-        systemPrompt: config.systemPrompt,
-        rules: config.rules,
+        role: effectiveConfig.role,
+        tone: effectiveConfig.tone,
+        systemPrompt: effectiveConfig.systemPrompt,
+        rules: effectiveConfig.rules,
       },
       history: history.map((message) => ({
         role: message.role,

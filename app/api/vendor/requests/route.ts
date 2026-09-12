@@ -17,7 +17,8 @@ export async function GET() {
       select: { role: true, trade: true },
     });
 
-    if (!professional || !['vendeur', 'artisan'].includes((professional.role || professional.trade || '').toLowerCase())) {
+    const professionalRole = (professional.role || professional.trade || '').toLowerCase();
+    if (!professional || !['vendeur', 'artisan', 'promoteur'].includes(professionalRole)) {
       return NextResponse.json({ error: 'Accès réservé aux professionnels.' }, { status: 403 });
     }
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getActorTaxonomy, getProfessionalFamilyByRole, getProfessionalFamilyLabel } from "@/lib/trade-rules";
 
 export async function GET(request: Request) {
   try {
@@ -44,7 +45,18 @@ export async function GET(request: Request) {
       orderBy: [{ certificationScore: "desc" }, { name: "asc" }],
     });
 
-    return NextResponse.json(professionals);
+    const enrichedProfessionals = professionals.map((professional) => {
+      const family = getProfessionalFamilyByRole(professional.role, professional.trade);
+      const taxonomy = getActorTaxonomy(professional.role, professional.trade);
+      return {
+        ...professional,
+        family,
+        familyLabel: getProfessionalFamilyLabel(family),
+        taxonomy,
+      };
+    });
+
+    return NextResponse.json(enrichedProfessionals);
   } catch (error) {
     console.error("Erreur recherche:", error);
     return NextResponse.json({ error: "Erreur interne" }, { status: 500 });

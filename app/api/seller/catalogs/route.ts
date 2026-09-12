@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { hasCatalogManagementRole } from "@/lib/role-access";
 
 // GET : récupérer tous les catalogues du vendeur
 export async function GET() {
@@ -9,6 +10,10 @@ export async function GET() {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+    }
+
+    if (!hasCatalogManagementRole(session)) {
+      return NextResponse.json({ error: "Accès interdit" }, { status: 403 });
     }
 
     const catalogs = await prisma.catalog.findMany({
@@ -41,6 +46,10 @@ export async function POST(request: Request) {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+    }
+
+    if (!hasCatalogManagementRole(session)) {
+      return NextResponse.json({ error: "Accès interdit" }, { status: 403 });
     }
 
     const body = await request.json();

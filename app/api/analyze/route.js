@@ -28,6 +28,88 @@ async function callOllama(prompt, model = "mistral:7b-instruct-q4_K_M") {
   return data.response;
 }
 
+function normalizeTradeName(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function buildTradeGuidance(selectedTrades) {
+  const normalized = selectedTrades
+    .map((trade) => normalizeTradeName(trade))
+    .filter(Boolean);
+
+  const tradeRules = {
+    carrelage: {
+      allowed: [
+        "carrelage", "colle a carrelage", "joint de carrelage", "sous-couche", "profilé de finition", "accessoire de pose", "ragréage", "découpe"
+      ],
+      reminder: "Pour le carrelage, propose seulement des éléments utiles au sol/mur, au collage, au jointoiement, au ragréage, à la finition et aux accessoires de pose."
+    },
+    electricite: {
+      allowed: [
+        "câble électrique", "gaines", "boite electrique", "prise", "interrupteur", "spot", "goulotte", "rail led", "tableau électrique", "luminaires", "dérivation"
+      ],
+      reminder: "Pour l'électricité, propose seulement des éléments de câblage, de distribution, d'éclairage, de sécurité et de raccordement."
+    },
+    plomberie: {
+      allowed: [
+        "tuyau", "robinet", "sanitaire", "canalisation", "colonne", "douche", "lavabo", "wc", "réseau plomberie"
+      ],
+      reminder: "Pour la plomberie, propose seulement les matériaux et prestations nécessaires au réseau, aux raccords et au sanitaire."
+    },
+    peinture: {
+      allowed: [
+        "peinture", "enduit", "primer", "apprêt", "joint de placo", "accessoire peinture"
+      ],
+      reminder: "Pour la peinture, propose seulement les matériaux de préparation, d'apprêt et de finition de surface."
+    },
+    menuiserie: {
+      allowed: [
+        "porte", "fenêtre", "placard", "bois", "menuiserie", "accessoire menuiserie"
+      ],
+      reminder: "Pour la menuiserie, propose uniquement les éléments utiles à la fabrication, à la pose et aux finitions de menuiseries."
+    }
+  };
+
+  if (!normalized.length) {
+    return "Aucun métier n'est sélectionné. Tu dois rester générique, mais éviter les métiers absents et rester prudent sur les propositions.";
+  }
+
+  const rules = normalized
+    .map((trade) => tradeRules[trade] || null)
+    .filter(Boolean)
+    .map((rule) => rule.reminder)
+    .join(" ");
+
+  return rules;
+}
+
+function buildUserProfileContext(user) {
+  const role = user?.role || user?.trade || "non précisé";
+  const trade = user?.trade || "non précisé";
+  const catalogNames = Array.isArray(user?.catalogs)
+    ? user.catalogs.map((catalog) => catalog?.name || "catalogue").filter(Boolean)
+    : [];
+  const catalogCategories = Array.isArray(user?.catalogs)
+    ? user.catalogs.flatMap((catalog) => Array.isArray(catalog?.products) ? catalog.products.map((product) => product?.category || "") : []).filter(Boolean)
+    : [];
+  const serviceNames = Array.isArray(user?.services)
+    ? user.services.map((service) => service?.name || "service").filter(Boolean)
+    : [];
+
+  return {
+    role,
+    trade,
+    catalogNames,
+    catalogCategories,
+    serviceNames,
+  };
+}
+
 export async function POST(req) {
   try {
     const contentType = req.headers.get("content-type") || "";
@@ -61,20 +143,31 @@ export async function POST(req) {
       tempFilePath = path.join(tempDir, `upload-${Date.now()}${ext}`);
       fs.writeFileSync(tempFilePath, buffer);
 
-      console.log("🔍 Lancement de PaddleOCR...");
+      console.log("🔍 OCR du document...");
       const { stdout: extractedTextResult, stderr: ocrError } = await execPromise(
         `py scripts/ocr.py "${tempFilePath}"`
       );
       if (ocrError) console.warn("⚠️ Erreur OCR (non bloquante):", ocrError);
       extractedText = extractedTextResult;
-      console.log("📄 Texte extrait:", extractedText.substring(0, 200) + "...");
     }
 
     let project;
     if (projectId) {
       project = await prisma.project.findUnique({
         where: { id: projectId },
-        include: { user: true, recipients: true },
+        include: {
+          user: {
+            include: {
+              catalogs: {
+                include: {
+                  products: true,
+                },
+              },
+              services: true,
+            },
+          },
+          recipients: true,
+        },
       });
       if (!project) throw new Error("Projet introuvable");
     }
@@ -88,16 +181,15 @@ export async function POST(req) {
       const clientName = project.clientName || "Client";
       const selectedTrades = Array.isArray(metadata.selectedTrades) ? metadata.selectedTrades : [];
       const pieces = Array.isArray(metadata.pieces) ? metadata.pieces : [];
-      const projectText = [
+      extractedText = [
         `Projet: ${projectName}`,
         `Client: ${clientName}`,
         `Description: ${description}`,
         `Surface: ${surface} m²`,
         `Budget: ${budgetEstimate} €`,
-        `Métiers: ${selectedTrades.length ? selectedTrades.join(", ") : "général"}`,
+        `Métiers sélectionnés: ${selectedTrades.length ? selectedTrades.join(", ") : "non précisé"}`,
         `Pièces: ${pieces.length ? pieces.map((piece) => `${piece.type || "Pièce"} ${piece.solSurface || 0}m² / ${piece.murSurface || 0}m²`).join(" | ") : "non détaillé"}`,
       ].join("\n");
-      extractedText = projectText;
     }
 
     if (!file && !project) {
@@ -108,81 +200,100 @@ export async function POST(req) {
       fs.unlinkSync(tempFilePath);
     }
 
-    const agents = await prisma.agent.findMany({
-      where: { type: "ia", isActive: true },
-    });
-    const findAgent = (nameSubstring) =>
-      agents.find((a) => a.name.includes(nameSubstring));
+    const selectedTrades = Array.isArray(project?.metadata?.selectedTrades)
+      ? project.metadata.selectedTrades
+          .map((trade) => String(trade).trim())
+          .filter(Boolean)
+      : [];
+    const selectedTradesText = selectedTrades.length > 0 ? selectedTrades.join(", ") : "non précisé";
+    const projectType = String(project?.type || project?.metadata?.workType || "non précisé");
+    const buildingType = String(project?.metadata?.batiment || "non précisé");
+    const surface = Number(project?.surface || 0);
+    const budget = Number(project?.budgetEstimate || 0);
+    const piecesText = Array.isArray(project?.metadata?.pieces) && project.metadata.pieces.length > 0
+      ? project.metadata.pieces
+          .map((piece) => `${piece.type || "Pièce"} : ${piece.solSurface || 0} m² sol / ${piece.murSurface || 0} m² mur / ${piece.hauteur || 0} m hauteur`)
+          .join(" | ")
+      : "non détaillé";
 
-    console.log("👁️ Agent Visionneur : analyse de la photo...");
-    const visionPrompt = `
-Analyse cette description de chantier extraite d'une photo :
-"${extractedText}"
+    const structuredPrompt = `
+Tu es un assistant expert en estimation de devis de bâtiment et de rénovation. Ton objectif est de produire un devis professionnel, lisible et exploitable pour un artisan, un vendeur ou un promoteur, sans afficher de code ni de JSON en brut dans la réponse finale.
 
-Donne-moi un JSON STRICT avec ces champs :
-- support: (type de sol, ex: "dalle béton", "carrelage existant", "plancher bois")
-- fissures: (true/false)
-- exterieur: (true/false)
-- humidite: (true/false)
-- ensoleillement: ("faible", "moyen", "fort")
-- obstacles: (liste d'obstacles, ex: ["poteau", "regard"])
-- surface_approx: (estimation en m², nombre)
+Contexte du projet :
+- Nom du projet : ${project?.name || "Projet"}
+- Type de projet : ${projectType}
+- Type de bâtiment : ${buildingType}
+- Surface totale : ${surface} m²
+- Pièces concernées : ${piecesText}
+- Budget estimé : ${budget} €
+- Métiers sélectionnés : ${selectedTradesText}
+- Description cliente : ${project?.description || "Aucune description détaillée"}
+
+Rôle et priorité :
+- Tu dois analyser le chantier comme un expert métier.
+- Tu dois respecter strictement les métiers sélectionnés par le client.
+- Tu dois tenir compte du type de projet (neuf, rénovation, extension, aménagement, dépannage), du type de chantier, de la surface, des pièces, de la structure et du budget.
+- Tu dois proposer un devis clair, exploitable et professionnel, prêt à être relu et modifié manuellement par un artisan, un vendeur ou un promoteur.
+
+Règles absolues :
+1. N'invente aucun métier non sélectionné par le client.
+2. Si le client a choisi "carrelage" et "electricite", propose seulement des lignes liées à ces deux métiers.
+3. Exclue toute plomberie, peinture, menuiserie, préparation ou finition non demandée, sauf si elle est strictement nécessaire à la réalisation du chantier.
+4. Si le chantier est en rénovation, prends en compte la dépose, le ragréage, les joints de dilatation, la préparation du support et les contraintes d'ancien bâti.
+5. Si le chantier est en neuf, prends en compte les préparations, la mise à niveau, le calepinage, les sous-couches, les accessoires de pose, le câblage et les raccordements nécessaires.
+6. Respecte les données métier suivantes :
+   - Carrelage : carreaux, colle, joints, sous-couche, profilés, accessoires de pose, protection, découpes.
+   - Électricité : câbles, gaines, boîtes, prises, interrupteurs, spots, tableau, goulottes, rails, luminaires, dérivation.
+7. Pour chaque ligne, donne : nom, metier, quantite, unite, prixUnitaire, total, justification, imageUrl.
+8. Les prix unitaire et total doivent être des nombres en euros, sans texte.
+9. total = quantite × prixUnitaire.
+10. estimationTotale = somme de tous les totals.
+11. Les quantités doivent être réalistes et proportionnées à la surface et au type de chantier.
+12. Si une information manque, fais une estimation prudente et précise, et précise le niveau de certitude dans la justification.
+13. Le devis final doit être lisible par un professionnel lambda, pas seulement par un développeur.
+
+Format de sortie JSON strict attendu :
+{
+  "produits": [
+    {
+      "nom": "Nom du produit ou prestation",
+      "metier": "carrelage",
+      "quantite": 12,
+      "unite": "m²",
+      "prixUnitaire": 33,
+      "total": 396,
+      "justification": "Explication courte et concrète",
+      "imageUrl": null
+    }
+  ],
+  "estimationTotale": 1200,
+  "conclusion": "Texte court, commercial et lisible pour un artisan ou un client"
+}
+
+Règles de sortie :
+- 3 à 8 lignes maximum, seules celles pertinentes pour les métiers sélectionnés.
+- Organise le devis par métier.
+- ajoute des lignes d’accessoires obligatoires si nécessaires.
+- imageUrl doit être null si aucune image n’est disponible.
+- Réponds uniquement avec un JSON valide, sans markdown, sans commentaires, sans texte supplémentaire.
 `;
-    const visionRaw = await callOllama(visionPrompt);
-    const visionData = JSON.parse(visionRaw);
 
-    console.log("🧠 Agent Expert 3S : application des règles métier...");
-    const expertPrompt = `
-Données extraites par l'analyse : ${JSON.stringify(visionData)}
+    const responseText = await callOllama(structuredPrompt, "mistral:7b-instruct-q4_K_M");
+    let parsedResult = { produits: [], conclusion: "" };
 
-Tu es un maître carreleur. Applique la règle des 3S (Support, Surface, Sollicitation).
-Réponds en JSON STRICT avec :
-- colle: (type, ex: "C2FT", "C2TE S1")
-- carrelage: (type, ex: "grès cérame givré R11")
-- joint: (type, ex: "époxy", "ciment")
-- pente: (si extérieur, en %, ex: 1.5, sinon null)
-- remarques: (contraintes techniques en texte)
-`;
-    const expertRaw = await callOllama(expertPrompt);
-    const expertData = JSON.parse(expertRaw);
-
-    console.log("🧮 Agent Calculette : calcul des quantités...");
-    const surface = visionData.surface_approx || 0;
-    const calcPrompt = `
-Surface approximative : ${surface} m²
-Produits recommandés : ${JSON.stringify(expertData)}
-
-Calcule les quantités pour ce chantier de carrelage.
-Réponds en JSON STRICT avec :
-- carreaux_m2: (surface + 10% de chute, nombre)
-- sacs_colle: (nombre, basé sur 5kg/m²)
-- joint_kg: (nombre, basé sur 0.5kg/m²)
-- temps_heures: (estimation en heures, basé sur 1.5h/m²)
-`;
-    const calcRaw = await callOllama(calcPrompt);
-    const calcData = JSON.parse(calcRaw);
-
-    console.log("✍️ Agent Rédacteur : génération du devis...");
-    const redacteurPrompt = `
-Tu es un maître carreleur expérimenté qui rédige des devis pour des clients.
-À partir de ces données :
-- Analyse visuelle : ${JSON.stringify(visionData)}
-- Produits techniques : ${JSON.stringify(expertData)}
-- Quantités : ${JSON.stringify(calcData)}
-
-Rédige un devis clair, professionnel et pédagogique en français.
-Structure-le avec :
-1. Introduction (référence du projet)
-2. Produits recommandés (avec justifications techniques et sécuritaires)
-3. Quantités estimées
-4. Temps de pose estimé
-5. Conclusion
-Sois rassurant et explique les choix (ex: pourquoi un carrelage antidérapant est obligatoire à l'extérieur).
-`;
-    const devisFinal = await callOllama(redacteurPrompt, "mistral:7b-instruct-q4_K_M");
-
-    if (tempFilePath) {
-      fs.unlinkSync(tempFilePath);
+    try {
+      parsedResult = JSON.parse(responseText);
+    } catch {
+      const match = responseText.match(/\{[\s\S]*\}/);
+      if (match) {
+        try {
+          parsedResult = JSON.parse(match[0]);
+        } catch {
+          parsedResult = { produits: [], conclusion: responseText };
+        }
+      } else {
+        parsedResult = { produits: [], conclusion: responseText };
+      }
     }
 
     if (!projectId && !project) {
@@ -195,63 +306,36 @@ Sois rassurant et explique les choix (ex: pourquoi un carrelage antidérapant es
           userId: user.id,
           name: `Projet ${new Date().toLocaleDateString()}`,
           type: "carrelage",
-          surface: surface,
+          surface: Number(extractedText.match(/Surface:\s*(\d+(?:[.,]\d+)?)/)?.[1]?.replace(",", ".")) || 0,
           status: "BROUILLON",
         },
       });
     }
 
-    const agentVision = findAgent("Visionneur");
-    const agentExpert = findAgent("Expert 3S");
-    const agentCalc = findAgent("Calculette");
-    const agentRedact = findAgent("Rédacteur");
+    const agent = await prisma.agent.findFirst({
+      where: { type: "ia", isActive: true },
+      orderBy: { createdAt: "asc" },
+    });
 
-    await prisma.aiRecommendation.createMany({
-      data: [
-        {
+    if (agent && project) {
+      await prisma.aiRecommendation.create({
+        data: {
           projectId: project.id,
-          agentId: agentVision.id,
-          createdByUserId: project.userId,
-          category: "vision",
-          content: JSON.stringify(visionData),
-          status: "APPROVED",
-        },
-        {
-          projectId: project.id,
-          agentId: agentExpert.id,
-          createdByUserId: project.userId,
-          category: "expertise",
-          content: JSON.stringify(expertData),
-          status: "APPROVED",
-        },
-        {
-          projectId: project.id,
-          agentId: agentCalc.id,
-          createdByUserId: project.userId,
-          category: "calcul",
-          content: JSON.stringify(calcData),
-          status: "APPROVED",
-        },
-        {
-          projectId: project.id,
-          agentId: agentRedact.id,
+          agentId: agent.id,
           createdByUserId: project.userId,
           category: "devis",
-          content: devisFinal,
+          content: JSON.stringify(parsedResult),
           status: "APPROVED",
         },
-      ],
-    });
+      });
+    }
 
     return NextResponse.json({
       success: true,
-      projectId: project.id,
-      devis: devisFinal,
-      details: {
-        vision: visionData,
-        expert: expertData,
-        calcul: calcData,
-      },
+      projectId: project?.id || projectId,
+      devis: JSON.stringify(parsedResult),
+      analysisResult: JSON.stringify(parsedResult),
+      details: parsedResult,
     });
   } catch (error) {
     console.error("❌ Erreur globale:", error);

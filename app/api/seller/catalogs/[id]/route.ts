@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from "@/lib/auth";
 import { prisma } from '@/lib/prisma';
+import { canManageCatalog } from '@/lib/role-access';
 
 // GET : récupérer un catalogue spécifique
 export async function GET(
@@ -16,15 +17,14 @@ export async function GET(
 
     const { id } = await params;
 
-    const catalog = await prisma.catalog.findFirst({
-      where: {
-        id,
-        userId: session.user.id,
-      },
-      include: {
-        products: true,
-      },
+    const catalog = await prisma.catalog.findUnique({
+      where: { id },
+      include: { products: true },
     });
+
+    if (!catalog || !canManageCatalog(session, catalog.userId)) {
+      return NextResponse.json({ error: 'Catalogue introuvable' }, { status: 404 });
+    }
 
     if (!catalog) {
       return NextResponse.json({ error: 'Catalogue introuvable' }, { status: 404 });
@@ -53,14 +53,11 @@ export async function PUT(
     const { name, description } = body;
 
     // Vérifier que le catalogue appartient au vendeur
-    const catalog = await prisma.catalog.findFirst({
-      where: {
-        id: catalogId,
-        userId: session.user.id,
-      },
+    const catalog = await prisma.catalog.findUnique({
+      where: { id: catalogId },
     });
 
-    if (!catalog) {
+    if (!catalog || !canManageCatalog(session, catalog.userId)) {
       return NextResponse.json({ error: 'Catalogue introuvable' }, { status: 404 });
     }
 
@@ -111,11 +108,8 @@ export async function DELETE(
     const { id: catalogId } = await params;
 
     // Vérifier que le catalogue appartient au vendeur
-    const catalog = await prisma.catalog.findFirst({
-      where: {
-        id: catalogId,
-        userId: session.user.id,
-      },
+    const catalog = await prisma.catalog.findUnique({
+      where: { id: catalogId },
       include: {
         products: {
           select: { id: true },
@@ -123,7 +117,7 @@ export async function DELETE(
       },
     });
 
-    if (!catalog) {
+    if (!catalog || !canManageCatalog(session, catalog.userId)) {
       return NextResponse.json({ error: 'Catalogue introuvable' }, { status: 404 });
     }
 

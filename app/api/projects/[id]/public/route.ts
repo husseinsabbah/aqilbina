@@ -76,10 +76,13 @@ export async function GET(
     );
 
     const winner = project.recipients.find((recipient) => recipient.status === 'RETENU');
+    const metadata = project.metadata && typeof project.metadata === 'object' ? project.metadata as Record<string, unknown> : {};
+    const displayedProjectType = project.type || (typeof metadata.projectType === 'string' ? metadata.projectType : null) || (typeof metadata.workType === 'string' ? metadata.workType : null) || null;
 
     return NextResponse.json({
       id: project.id,
       name: project.name,
+      type: displayedProjectType,
       clientName: project.clientName || 'Non renseigné',
       clientPhone: project.clientPhone,
       clientEmail: project.clientEmail,
@@ -95,7 +98,11 @@ export async function GET(
       depositProofUrl: project.depositProofUrl,
       depositValidated: Boolean(project.depositValidated) || (depositPercent !== null && depositPercent >= 25),
       requiresPin: Boolean(project.projectAccessPinHash),
-      metadata: project.metadata || {},
+      metadata: {
+        ...(project.metadata && typeof project.metadata === 'object' ? project.metadata as Record<string, unknown> : {}),
+        projectType: displayedProjectType,
+        workType: typeof metadata.workType === 'string' ? metadata.workType : null,
+      },
       recipients: project.recipients.map((recipient) => ({
         id: recipient.id,
         professionalId: recipient.professionalId,

@@ -33,6 +33,7 @@ interface Project {
   desiredEndDate?: string | null;
   portfolioMedia?: string | string[];
   metadata?: {
+    projectType?: string | null;
     selectedTrades?: string[];
     workType?: string;
     batiment?: string;
@@ -72,9 +73,22 @@ interface Project {
 interface ProposalItem {
   productId?: string;
   name: string;
+  description?: string | null;
   quantity: number;
   unitPrice: number;
   tvaRate: number;
+  selectionMode?: "catalog" | "manual";
+  imageUrl?: string | null;
+  catalogPrice?: number | null;
+}
+
+interface SellerProduct {
+  id: string;
+  name: string;
+  category?: string | null;
+  salePrice?: number | null;
+  imageUrl?: string | null;
+  description?: string | null;
 }
 
 interface UserService {
@@ -108,8 +122,9 @@ export default function ProjectPublicPage() {
   const [iaClarification, setIaClarification] = useState("");
 
   const [showProposalForm, setShowProposalForm] = useState(false);
+  const [sellerProducts, setSellerProducts] = useState<SellerProduct[]>([]);
   const [proposalItems, setProposalItems] = useState<ProposalItem[]>([
-    { name: "", quantity: 1, unitPrice: 0, tvaRate: 20 },
+    { name: "", description: "", quantity: 1, unitPrice: 0, tvaRate: 20, selectionMode: "catalog", imageUrl: null, catalogPrice: null },
   ]);
   const [deliveryDays, setDeliveryDays] = useState(7);
   const [proposalMessage, setProposalMessage] = useState("");
@@ -126,6 +141,67 @@ export default function ProjectPublicPage() {
       .replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-z0-9]+/g, " ")
       .trim();
+
+  const parseIaPreDevisResult = (raw: string | null) => {
+    if (!raw) {
+      return { products: [], conclusion: "", total: 0 };
+    }
+
+    const cleaned = raw
+      .replace(/^.*?Pré-devis IA\s*:/is, "")
+      .trim();
+
+    const jsonCandidate = cleaned.includes("{") ? cleaned.slice(cleaned.indexOf("{"), cleaned.lastIndexOf("}") + 1) : cleaned;
+
+    try {
+      const parsed = JSON.parse(jsonCandidate);
+      const devis = parsed?.devis ?? parsed;
+      const rawProducts = Array.isArray(devis?.produits) ? devis.produits : [];
+
+      const products = rawProducts.map((product: any, index: number) => {
+        const quantityValue = Number(product?.quantite ?? product?.quantité ?? product?.quantity ?? 1);
+        const unitPriceValue = Number(product?.prixUnitaire ?? product?.prix_unitaire ?? product?.unitPrice ?? product?.prix ?? 0);
+        const totalValue = Number(
+          product?.total ??
+          product?.totalLigne ??
+          product?.prixTotal ??
+          (Number.isFinite(quantityValue) && Number.isFinite(unitPriceValue) ? quantityValue * unitPriceValue : 0)
+        );
+
+        return {
+          name: product?.nom || `Produit ${index + 1}`,
+          quantity: Number.isFinite(quantityValue) && quantityValue > 0 ? quantityValue : 1,
+          unitPrice: Number.isFinite(unitPriceValue) ? unitPriceValue : 0,
+          total: Number.isFinite(totalValue) ? totalValue : 0,
+          justification: product?.justification || "Produit recommandé par l’IA.",
+          imageUrl: product?.imageUrl || product?.image || null,
+          trade: product?.metier || product?.trade || "général",
+          imageLabel: (product?.nom || `P${index + 1}`)
+            .split(/\s+/)
+            .slice(0, 2)
+            .map((part: string) => part[0] || "")
+            .join("")
+            .toUpperCase() || "P",
+        };
+      });
+
+      const total = products.reduce((sum: number, product: any) => sum + Number(product.total || 0), 0);
+
+      return {
+        products,
+        conclusion: devis?.conclusion || "",
+        total,
+      };
+    } catch {
+      return {
+        products: [],
+        conclusion: raw,
+        total: 0,
+      };
+    }
+  };
+
+  const parsedIaPreDevis = useMemo(() => parseIaPreDevisResult(iaResult), [iaResult]);
 
   const matchedServices = useMemo<MatchedService[]>(() => {
     if (!project || services.length === 0) return [];
@@ -252,6 +328,27 @@ export default function ProjectPublicPage() {
     void loadServices();
   }, [isProfessional]);
 
+  useEffect(() => {
+    const loadSellerProducts = async () => {
+      if (!isProfessional) {
+        setSellerProducts([]);
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/seller/products", { credentials: "include" });
+        if (!res.ok) return;
+        const data = await res.json().catch(() => []);
+        setSellerProducts(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error("Erreur chargement produits vendeur:", error);
+        setSellerProducts([]);
+      }
+    };
+
+    void loadSellerProducts();
+  }, [isProfessional]);
+
   const handleAnalyzeWithIA = async () => {
     if (!projectId || iaLoading) return;
     setIaLoading(true);
@@ -304,6 +401,47 @@ export default function ProjectPublicPage() {
     setIaError(null);
   };
 
+  const proposalTotals = useMemo(() => {
+    const subtotal = proposalItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+    const tva = proposalItems.reduce((sum, item) => sum + item.quantity * item.unitPrice * (item.tvaRate / 100), 0);
+    return {
+      subtotal,
+      tva,
+      total: subtotal + tva,
+    };
+  }, [proposalItems]);
+
+  useEffect(() => {
+    if (!showProposalForm || parsedIaPreDevis.products.length === 0) return;
+
+    setProposalItems((current) => {
+      const hasExistingContent = current.some((item) => item.name.trim() || item.productId);
+      if (hasExistingContent) return current;
+
+      return parsedIaPreDevis.products.slice(0, 4).map((product, index) => {
+        const matchedSellerProduct = sellerProducts.find((candidate) =>
+          normalizeText(candidate.name) === normalizeText(product.name) ||
+          normalizeText(candidate.name).includes(normalizeText(product.name)) ||
+          normalizeText(product.name).includes(normalizeText(candidate.name))
+        );
+
+        return {
+          productId: matchedSellerProduct?.id,
+          name: product.name,
+          description: matchedSellerProduct?.description || product.justification || "",
+          quantity: Number(product.quantity) > 0 ? Number(product.quantity) : 1,
+          unitPrice: matchedSellerProduct?.salePrice && Number(matchedSellerProduct.salePrice) > 0
+            ? Number(matchedSellerProduct.salePrice)
+            : 0,
+          tvaRate: 20,
+          selectionMode: matchedSellerProduct ? "catalog" : "manual",
+          imageUrl: matchedSellerProduct?.imageUrl || product.imageUrl || null,
+          catalogPrice: matchedSellerProduct?.salePrice && Number(matchedSellerProduct.salePrice) > 0 ? Number(matchedSellerProduct.salePrice) : null,
+        };
+      });
+    });
+  }, [parsedIaPreDevis.products, sellerProducts, showProposalForm]);
+
   const handleSendProposal = async () => {
     if (!project || !user) return;
 
@@ -344,16 +482,37 @@ export default function ProjectPublicPage() {
   };
 
   const addProposalItem = () => {
-    setProposalItems([...proposalItems, { name: "", quantity: 1, unitPrice: 0, tvaRate: 20 }]);
+    setProposalItems([...proposalItems, { name: "", description: "", quantity: 1, unitPrice: 0, tvaRate: 20, selectionMode: "catalog", imageUrl: null, catalogPrice: null }]);
   };
   const removeProposalItem = (index: number) => {
     if (proposalItems.length > 1) {
       setProposalItems(proposalItems.filter((_, i) => i !== index));
     }
   };
-  const updateProposalItem = (index: number, field: keyof ProposalItem, value: string | number) => {
+  const updateProposalItem = (index: number, field: keyof ProposalItem, value: string | number | null) => {
     const updated = [...proposalItems];
     updated[index] = { ...updated[index], [field]: value };
+    setProposalItems(updated);
+  };
+
+  const applyProductSelection = (index: number, product: SellerProduct | null, customName?: string, customDescription?: string) => {
+    const updated = [...proposalItems];
+    const selectedProduct = product ?? null;
+    const nextName = customName ?? selectedProduct?.name ?? "";
+    const nextDescription = customDescription ?? selectedProduct?.description ?? "";
+    const originalPrice = selectedProduct?.salePrice && Number(selectedProduct.salePrice) > 0 ? Number(selectedProduct.salePrice) : null;
+
+    updated[index] = {
+      ...updated[index],
+      productId: selectedProduct?.id ?? undefined,
+      name: nextName,
+      description: nextDescription,
+      unitPrice: originalPrice ?? updated[index].unitPrice,
+      imageUrl: selectedProduct?.imageUrl ?? null,
+      selectionMode: updated[index].selectionMode ?? "catalog",
+      catalogPrice: originalPrice,
+    };
+
     setProposalItems(updated);
   };
 
@@ -397,6 +556,7 @@ export default function ProjectPublicPage() {
   const uiStatus = statusLabels[statusKey] || "Demande active";
 
   const selectedTrades = project?.metadata?.selectedTrades || [];
+  const displayProjectType = project?.type || project?.metadata?.projectType || project?.metadata?.workType || "Non renseigné";
 
   const rawFiles = project?.metadata?.files;
   const safeFiles = Array.isArray(rawFiles) ? rawFiles.filter(url => isValidUrl(url)) : [];
@@ -679,7 +839,7 @@ export default function ProjectPublicPage() {
               </div>
               <div className="rounded-xl bg-white p-3 border border-emerald-100">
                 <p className="text-xs uppercase tracking-wide text-slate-500">Type</p>
-                <p className="mt-2 text-lg font-bold text-slate-900">{project.type || project.metadata?.workType || "Non renseigné"}</p>
+                <p className="mt-2 text-lg font-bold text-slate-900">{displayProjectType}</p>
               </div>
               <div className="rounded-xl bg-white p-3 border border-emerald-100">
                 <p className="text-xs uppercase tracking-wide text-slate-500">Surface</p>
@@ -745,8 +905,84 @@ export default function ProjectPublicPage() {
 
             {iaResult && (
               <div className="mt-3 rounded-lg border border-blue-200 bg-white p-4 text-sm text-slate-700">
-                <div className="mb-2 font-semibold text-slate-900">Pré-devis IA :</div>
-                <div className="whitespace-pre-wrap font-mono text-xs leading-relaxed">{iaResult}</div>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div className="font-semibold text-slate-900">Pré-devis IA</div>
+                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">
+                    Produit / prix / total
+                  </span>
+                </div>
+
+                {parsedIaPreDevis.products.length > 0 ? (
+                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-left text-sm">
+                        <thead className="bg-slate-100 text-slate-700">
+                          <tr>
+                            <th className="px-3 py-2 font-semibold">Produit</th>
+                            <th className="px-3 py-2 font-semibold">Description</th>
+                            <th className="px-3 py-2 font-semibold">Qté</th>
+                            <th className="px-3 py-2 font-semibold">Prix</th>
+                            <th className="px-3 py-2 font-semibold">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {parsedIaPreDevis.products.map((product, index) => (
+                            <tr key={`${product.name}-${index}`} className="border-t border-slate-200 bg-white align-top">
+                              <td className="px-3 py-3">
+                                <div className="flex items-center gap-3">
+                                  {product.imageUrl ? (
+                                    <Image
+                                      src={product.imageUrl}
+                                      alt={product.name}
+                                      width={56}
+                                      height={56}
+                                      unoptimized
+                                      className="h-14 w-14 rounded-lg border border-slate-200 object-cover bg-slate-100"
+                                    />
+                                  ) : (
+                                    <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-slate-200 bg-gradient-to-br from-blue-100 to-slate-100 text-xs font-bold text-blue-700">
+                                      {product.imageLabel}
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div className="font-semibold text-slate-900">{product.name}</div>
+                                    <div className="mt-1 text-xs text-slate-500">{product.trade}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 text-slate-700">
+                                <div className="max-w-xs text-xs text-slate-600">
+                                  {product.justification || "Produit recommandé pour ce chantier."}
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 text-slate-700">{product.quantity}</td>
+                              <td className="px-3 py-3 text-slate-700">{Number(product.unitPrice || 0).toFixed(2)} €</td>
+                              <td className="px-3 py-3 text-slate-700">{Number(product.total || 0).toFixed(2)} €</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="whitespace-pre-wrap font-mono text-xs leading-relaxed">{iaResult}</div>
+                )}
+
+                {parsedIaPreDevis.total > 0 && (
+                  <div className="mt-4 flex justify-end">
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-right">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Total estimé</div>
+                      <div className="text-xl font-bold text-emerald-900">{Number(parsedIaPreDevis.total || 0).toFixed(2)} €</div>
+                    </div>
+                  </div>
+                )}
+
+                {parsedIaPreDevis.conclusion && (
+                  <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-900">
+                    <div className="mb-1 font-semibold text-emerald-800">Conclusion</div>
+                    <div>{parsedIaPreDevis.conclusion}</div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -883,75 +1119,192 @@ export default function ProjectPublicPage() {
               <div className="mt-4 rounded-xl bg-white p-4 shadow-sm">
                 <h4 className="mb-3 font-semibold text-slate-900">Détail du devis</h4>
 
-                {proposalItems.map((item, index) => (
-                  <div key={index} className="mb-3 grid grid-cols-12 gap-2 items-end border-b border-slate-100 pb-3">
-                    <div className="col-span-5">
-                      <label className="block text-xs font-semibold text-slate-600">Description</label>
-                      <input
-                        type="text"
-                        value={item.name}
-                        onChange={(e) => updateProposalItem(index, "name", e.target.value)}
-                        className="w-full rounded-lg border border-slate-200 px-2 py-1 text-sm"
-                        placeholder="Ex: Carrelage sol"
-                      />
+                {proposalItems.map((item, index) => {
+                  const currentProduct = sellerProducts.find((product) => product.id === item.productId) || null;
+                  const matchingSuggestions = sellerProducts.filter((product) => {
+                    const search = (item.name || "").trim().toLowerCase();
+                    if (!search) return true;
+                    return product.name.toLowerCase().includes(search) || (product.category || "").toLowerCase().includes(search);
+                  });
+
+                  return (
+                    <div key={index} className="mb-3 grid grid-cols-12 gap-2 items-end border-b border-slate-100 pb-3">
+                      <div className="col-span-4">
+                        <label className="block text-xs font-semibold text-slate-600">Produit</label>
+                        <div className="mt-1 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                          <select
+                            value={item.selectionMode || "catalog"}
+                            onChange={(e) => {
+                              const mode = e.target.value as "catalog" | "manual";
+                              updateProposalItem(index, "selectionMode", mode);
+                              if (mode === "catalog" && currentProduct) {
+                                applyProductSelection(index, currentProduct);
+                              }
+                            }}
+                            className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
+                          >
+                            <option value="catalog">Choisir dans le catalogue</option>
+                            <option value="manual">Saisir manuellement</option>
+                          </select>
+
+                          {(item.selectionMode || "catalog") === "catalog" ? (
+                            <select
+                              value={item.productId || ""}
+                              onChange={(e) => {
+                                const selected = sellerProducts.find((product) => product.id === e.target.value) || null;
+                                applyProductSelection(index, selected);
+                              }}
+                              className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                            >
+                              <option value="">Sélectionner un produit</option>
+                              {sellerProducts.map((product) => (
+                                <option key={product.id} value={product.id}>
+                                  {product.name} · {Number(product.salePrice || 0).toFixed(2)} €
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <>
+                              <input
+                                type="text"
+                                value={item.name}
+                                list={`product-search-${index}`}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  updateProposalItem(index, "name", value);
+                                  const matched = sellerProducts.find((product) => product.name.toLowerCase() === value.trim().toLowerCase())
+                                    || sellerProducts.find((product) => product.name.toLowerCase().includes(value.trim().toLowerCase()));
+                                  if (matched) {
+                                    applyProductSelection(index, matched, value, matched.description || "");
+                                  } else {
+                                    updateProposalItem(index, "productId", undefined);
+                                    updateProposalItem(index, "imageUrl", null);
+                                    updateProposalItem(index, "catalogPrice", null);
+                                  }
+                                }}
+                                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                                placeholder="Tapez un produit..."
+                              />
+                              <datalist id={`product-search-${index}`}>
+                                {matchingSuggestions.map((product) => (
+                                  <option key={product.id} value={product.name} />
+                                ))}
+                              </datalist>
+                            </>
+                          )}
+
+                          {(currentProduct?.imageUrl || item.imageUrl) && (
+                            <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-white p-1.5">
+                              <Image
+                                src={currentProduct?.imageUrl || item.imageUrl || "/"}
+                                alt={item.name || "Produit"}
+                                width={42}
+                                height={42}
+                                unoptimized
+                                className="h-10 w-10 rounded-md object-cover"
+                              />
+                              <span className="text-[11px] text-slate-600">Image du produit</span>
+                            </div>
+                          )}
+
+                          {(currentProduct?.salePrice || item.catalogPrice) && (
+                            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] text-emerald-800">
+                              Prix catalogue : {Number(currentProduct?.salePrice ?? item.catalogPrice ?? 0).toFixed(2)} €
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="col-span-3">
+                        <label className="block text-xs font-semibold text-slate-600">Description</label>
+                        <textarea
+                          value={item.description ?? ""}
+                          onChange={(e) => updateProposalItem(index, "description", e.target.value)}
+                          rows={3}
+                          className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                          placeholder="Décrivez le produit ou la finition"
+                        />
+                      </div>
+
+                      <div className="col-span-1">
+                        <label className="block text-xs font-semibold text-slate-600">Qté</label>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={item.quantity}
+                          onChange={(e) => updateProposalItem(index, "quantity", parseFloat(e.target.value) || 0)}
+                          className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                        />
+                      </div>
+                      <div className="col-span-1">
+                        <label className="block text-xs font-semibold text-slate-600">Prix unit.</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.unitPrice}
+                          onChange={(e) => updateProposalItem(index, "unitPrice", parseFloat(e.target.value) || 0)}
+                          className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                          placeholder="€"
+                        />
+                      </div>
+                      <div className="col-span-1">
+                        <label className="block text-xs font-semibold text-slate-600">TVA</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={item.tvaRate}
+                          onChange={(e) => updateProposalItem(index, "tvaRate", parseFloat(e.target.value) || 0)}
+                          className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                          placeholder="%"
+                        />
+                      </div>
+                      <div className="col-span-1 flex flex-col justify-end">
+                        <span className="text-[10px] font-semibold uppercase text-slate-500">Total</span>
+                        <div className="mt-1 rounded-md bg-slate-100 px-1.5 py-1 text-[11px] font-semibold text-slate-700 text-center">
+                          {((item.quantity * item.unitPrice * (1 + item.tvaRate / 100))).toFixed(2)} €
+                        </div>
+                      </div>
+                      <div className="col-span-1 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => removeProposalItem(index)}
+                          className="text-red-500 hover:text-red-700 disabled:opacity-50"
+                          disabled={proposalItems.length <= 1}
+                        >
+                          ×
+                        </button>
+                      </div>
                     </div>
-                    <div className="col-span-2">
-                      <label className="block text-xs font-semibold text-slate-600">Qté</label>
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={item.quantity}
-                        onChange={(e) => updateProposalItem(index, "quantity", parseFloat(e.target.value) || 0)}
-                        className="w-full rounded-lg border border-slate-200 px-2 py-1 text-sm"
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-xs font-semibold text-slate-600">Prix unit.</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={item.unitPrice}
-                        onChange={(e) => updateProposalItem(index, "unitPrice", parseFloat(e.target.value) || 0)}
-                        className="w-full rounded-lg border border-slate-200 px-2 py-1 text-sm"
-                        placeholder="€"
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-xs font-semibold text-slate-600">TVA</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.1"
-                        value={item.tvaRate}
-                        onChange={(e) => updateProposalItem(index, "tvaRate", parseFloat(e.target.value) || 0)}
-                        className="w-full rounded-lg border border-slate-200 px-2 py-1 text-sm"
-                        placeholder="%"
-                      />
-                    </div>
-                    <div className="col-span-1 flex justify-end">
-                      <button
-                        type="button"
-                        onClick={() => removeProposalItem(index)}
-                        className="text-red-500 hover:text-red-700 disabled:opacity-50"
-                        disabled={proposalItems.length <= 1}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 <button
                   type="button"
-                  onClick={addProposalItem}
+                  onClick={() => setProposalItems((prev) => [...prev, { name: "", quantity: 1, unitPrice: 0, tvaRate: 20, selectionMode: "catalog", imageUrl: null }])}
                   className="mb-3 text-sm text-blue-600 hover:text-blue-800"
                 >
                   + Ajouter une ligne
                 </button>
 
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">HT</div>
+                    <div className="mt-2 text-lg font-bold text-slate-900">{proposalTotals.subtotal.toFixed(2)} €</div>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">TVA</div>
+                    <div className="mt-2 text-lg font-bold text-slate-900">{proposalTotals.tva.toFixed(2)} €</div>
+                  </div>
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">TTC</div>
+                    <div className="mt-2 text-lg font-bold text-emerald-900">{proposalTotals.total.toFixed(2)} €</div>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 mt-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600">Délai (jours)</label>
                     <input

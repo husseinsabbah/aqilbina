@@ -106,56 +106,90 @@ export default function VendeurDemandesPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {requests.map((request) => (
-                <article key={request.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
-                          {statusLabels[request.status] || request.status}
-                        </span>
-                        {request.trade && (
-                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                            {request.trade}
+              {requests.map((request) => {
+                const statusLabel = statusLabels[request.status] || request.status;
+                const project = request.project;
+
+                return (
+                  <article key={request.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                      <div className="min-w-0 flex-1 space-y-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                            {statusLabel}
                           </span>
+                          {request.trade && (
+                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                              {request.trade}
+                            </span>
+                          )}
+                        </div>
+
+                        <div>
+                          <h2 className="text-xl font-bold text-slate-900">{project.name}</h2>
+                          <p className="mt-1 text-sm text-slate-500">
+                            {project.type || "Projet non précisé"} · {project.surface ? `${project.surface} m²` : "Surface non renseignée"}
+                          </p>
+                        </div>
+
+                        <div className="grid gap-2 text-sm text-slate-600 md:grid-cols-2 xl:grid-cols-4">
+                          <div className="rounded-xl bg-slate-50 p-3">
+                            <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">Client</p>
+                            <p className="mt-2 inline-flex items-center gap-2 font-medium text-slate-800">
+                              <User className="h-4 w-4" /> {project.clientName || "Client anonyme"}
+                            </p>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 p-3">
+                            <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">Budget</p>
+                            <p className="mt-2 font-medium text-slate-800">
+                              {project.budgetEstimate ? `${project.budgetEstimate} €` : "Non renseigné"}
+                            </p>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 p-3">
+                            <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">Date</p>
+                            <p className="mt-2 inline-flex items-center gap-2 font-medium text-slate-800">
+                              <Clock3 className="h-4 w-4" /> {new Date(project.createdAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                            </p>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 p-3">
+                            <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">Association</p>
+                            <p className="mt-2 font-medium text-slate-800">Aucun artisan associé</p>
+                          </div>
+                        </div>
+
+                        {project.description && (
+                          <p className="text-sm leading-6 text-slate-600">{project.description}</p>
+                        )}
+
+                        {(project.clientAddress || request.message) && (
+                          <div className="space-y-2 text-sm text-slate-500">
+                            {project.clientAddress && (
+                              <div className="inline-flex items-center gap-2">
+                                <MapPin className="h-4 w-4" /> {project.clientAddress}
+                              </div>
+                            )}
+                            {request.message && <div>{request.message}</div>}
+                          </div>
                         )}
                       </div>
 
-                      <h2 className="text-xl font-bold text-slate-900">{request.project.name}</h2>
-
-                      <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500">
-                        <span className="inline-flex items-center gap-1"><User className="h-4 w-4" /> {request.project.clientName || "Client anonyme"}</span>
-                        {request.project.type && <span>{request.project.type}</span>}
-                        {request.project.surface && <span>{request.project.surface} m²</span>}
-                        {request.project.budgetEstimate && <span>{request.project.budgetEstimate} €</span>}
-                      </div>
-
-                      {request.project.description && (
-                        <p className="text-sm text-slate-600">{request.project.description}</p>
-                      )}
-
-                      {(request.project.clientAddress || request.message) && (
-                        <div className="space-y-1 text-sm text-slate-500">
-                          {request.project.clientAddress && (
-                            <div className="inline-flex items-center gap-1"><MapPin className="h-4 w-4" /> {request.project.clientAddress}</div>
-                          )}
-                          {request.message && <div>{request.message}</div>}
+                      <div className="flex min-w-[230px] flex-col gap-3 xl:items-end">
+                        <div className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                          <p className="font-medium text-slate-800">Action</p>
+                          <p className="mt-1">Vérifier la demande et ouvrir le projet pour poursuivre.</p>
                         </div>
-                      )}
-                    </div>
 
-                    <div className="flex min-w-[220px] flex-col gap-2 text-sm text-slate-600">
-                      <div className="inline-flex items-center gap-1"><Clock3 className="h-4 w-4" /> {new Date(request.createdAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })}</div>
-                      <Link
-                        href={`/projets/${request.project.id}`}
-                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
-                      >
-                        Voir le projet <ArrowRight className="h-4 w-4" />
-                      </Link>
+                        <Link
+                          href={`/projets/${project.id}`}
+                          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
+                        >
+                          Voir le projet <ArrowRight className="h-4 w-4" />
+                        </Link>
+                      </div>
                     </div>
-                  </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           )}
         </div>

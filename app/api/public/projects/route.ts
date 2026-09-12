@@ -4,6 +4,7 @@ import { randomBytes } from "crypto";
 import fs from "fs";
 import path from "path";
 import bcrypt from "bcryptjs";
+import { getActorTaxonomy, getBroadcastTargetRoles, normalizeProjectActorRole } from "@/lib/trade-rules";
 
 const prisma = new PrismaClient();
 
@@ -18,6 +19,43 @@ function normalizePublicProjectUrl(projectId: string, url?: string | null) {
     return normalized;
   }
   return `${normalized}/projets/${projectId}`;
+}
+
+function normalizeSearchToken(value?: string | null) {
+  return (value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function extractSearchTokensFromUser(user: { trade?: string | null; role?: string | null; products?: Array<{ category?: string | null }> | null }) {
+  const rawValues = [user.trade, user.role, ...(user.products ?? []).map((product) => product.category)];
+  const tokens = rawValues
+    .map((value) => normalizeSearchToken(value))
+    .flatMap((value) => value.split(/\s+/).filter(Boolean));
+
+  return Array.from(new Set(tokens.filter((token) => token.length > 1)));
+}
+
+function userMatchesSelectedCategory(
+  user: { trade?: string | null; role?: string | null; products?: Array<{ category?: string | null }> | null },
+  requestedTrades: string[]
+) {
+  if (requestedTrades.length === 0) return true;
+
+  const tokens = extractSearchTokensFromUser(user);
+  const requested = requestedTrades
+    .map((trade) => normalizeSearchToken(trade))
+    .filter(Boolean);
+
+  if (requested.length === 0) return true;
+
+  return requested.some((requestedTrade) => {
+    if (tokens.includes(requestedTrade)) return true;
+    return tokens.some((token) => token.includes(requestedTrade) || requestedTrade.includes(token));
+  });
 }
 
 function getPublicBaseUrl(): string {
@@ -48,8 +86,8 @@ async function getOrCreateSystemUser(): Promise<{ id: string }> {
     user = await prisma.user.create({
       data: {
         email: systemEmail,
-        name: "Système Aqil Bina",
-        role: "admin",
+        name: "Client public Aqil Bina",
+        role: "user",
         password: passwordHash,
       },
       select: { id: true },
@@ -73,6 +111,8 @@ export async function POST(req: Request) {
       professionalRole,
       professionalTrade,
       selectedTrades,
+      targetRole,
+      targetTrades,
       clientName,
       clientPhone,
       clientEmail,
@@ -87,15 +127,43 @@ export async function POST(req: Request) {
       pieces,
       desiredStartDate,
       desiredEndDate,
+      projectInfo,
+      siteInfo,
+      clientInfo,
     } = body;
 
-    if (!clientName || !clientEmail || !clientPhone || !projectName) {
+    const normalizedTargetRole = normalizeProjectActorRole(targetRole ?? professionalRole);
+    const rawChosenTrades = Array.isArray(targetTrades) ? targetTrades : Array.isArray(selectedTrades) ? selectedTrades : [];
+    const selectedTradeValues = rawChosenTrades
+      .map((entry) => (typeof entry === "string" ? entry : entry?.value ?? entry?.trade ?? ""))
+      .filter((value) => typeof value === "string" && value.trim().length > 0)
+      .map((value) => String(value));
+
+    const selectedTradeLabels = rawChosenTrades
+      .map((entry) => (typeof entry === "string" ? entry : entry?.label ?? entry?.value ?? entry?.trade ?? ""))
+      .filter((value) => typeof value === "string" && value.trim().length > 0)
+      .map((value) => String(value));
+
+    const finalClientName = clientName ?? clientInfo?.name ?? "";
+    const finalClientPhone = clientPhone ?? clientInfo?.phone ?? "";
+    const finalClientEmail = clientEmail ?? clientInfo?.email ?? "";
+    const finalClientAddress = clientAddress ?? clientInfo?.address ?? "";
+    const finalProjectName = projectName ?? projectInfo?.name ?? "";
+    const finalProjectType = projectType ?? projectInfo?.type ?? "";
+    const finalWorkType = workType ?? projectInfo?.workType ?? null;
+    const finalDescription = description ?? projectInfo?.description ?? "";
+    const finalBudgetEstimate = budgetEstimate ?? projectInfo?.budgetEstimate ?? null;
+    const finalBatiment = batiment ?? siteInfo?.batiment ?? "";
+    const finalChantiers = chantiers ?? siteInfo?.chantiers ?? [];
+    const finalPieces = pieces ?? siteInfo?.pieces ?? [];
+
+    if (!finalClientName || !finalClientEmail || !finalClientPhone || !finalProjectName) {
       return NextResponse.json({ error: "Champs obligatoires manquants." }, { status: 400 });
     }
 
-    const normalizedTargetRole = ["all", "artisan", "vendeur", "promoteur"].includes(professionalRole)
-      ? professionalRole
-      : "artisan";
+    const canonicalTrade = selectedTradeValues[0] ?? professionalTrade ?? normalizedTargetRole;
+    const targetRoles = getBroadcastTargetRoles(normalizedTargetRole);
+    const actorTaxonomy = getActorTaxonomy(normalizedTargetRole, canonicalTrade);
 
     // Gestion du broadcast
     let finalUserId: string;
@@ -151,55 +219,101 @@ export async function POST(req: Request) {
     const project = await prisma.project.create({
       data: {
         userId: finalUserId,
-        name: projectName,
-        description: description || null,
-        type: projectType || null,
+        name: finalProjectName,
+        description: finalDescription || null,
+        type: finalProjectType || null,
         surface: totalSurface,
-        budgetEstimate: budgetEstimate || null,
+        budgetEstimate: finalBudgetEstimate || null,
         status: "ACTIVE",
-        clientName,
-        clientPhone,
-        clientEmail,
-        clientAddress,
-startDate: desiredStartDate ? new Date(desiredStartDate) : null,
-endDate: desiredEndDate ? new Date(desiredEndDate) : null,        metadata: {
-          selectedTrades: selectedTrades || [],
-          workType: workType || null,
-          professionalRole,
-          professionalTrade,
-          batiment,
-          chantiers,
-          pieces: pieces || [],
+        clientName: finalClientName,
+        clientPhone: finalClientPhone,
+        clientEmail: finalClientEmail,
+        clientAddress: finalClientAddress,
+        startDate: desiredStartDate ? new Date(desiredStartDate) : null,
+        endDate: desiredEndDate ? new Date(desiredEndDate) : null,
+        metadata: {
+          projectType: finalProjectType || null,
+          selectedTrades: selectedTradeValues.length > 0 ? selectedTradeValues : (Array.isArray(selectedTrades) ? selectedTrades : []),
+          selectedTradeLabels: selectedTradeLabels.length > 0 ? selectedTradeLabels : (Array.isArray(selectedTrades) ? selectedTrades : []),
+          tradeValues: selectedTradeValues,
+          tradeLabels: selectedTradeLabels,
+          workType: finalWorkType || null,
+          professionalRole: normalizedTargetRole,
+          professionalTrade: canonicalTrade,
+          actorTaxonomy,
+          targetRoles,
+          batiment: finalBatiment,
+          chantiers: finalChantiers,
+          pieces: finalPieces || [],
           files: fileUrls,
           details: {
-            description: description || "",
+            description: finalDescription || "",
           },
         },
       },
     });
 
     // Gestion des invitations
-    if (isBroadcast && selectedTrades && selectedTrades.length > 0) {
-      const roleFilter = normalizedTargetRole === "all"
-        ? ["artisan", "vendeur", "promoteur"]
-        : [normalizedTargetRole];
+    if (isBroadcast) {
+      const requestedTrades = selectedTradeValues.length > 0
+        ? selectedTradeValues
+            .map((trade) => normalizeSearchToken(String(trade)))
+            .filter((trade) => trade.length > 0 && !["general", "all", "tous", "toutes", "professionnel", "professionnels"].includes(trade))
+        : [];
 
+      const eligibleProfileRoles = Array.from(new Set(targetRoles.filter((role) => ["artisan", "vendeur", "promoteur"].includes(role))));
       const recipients = await prisma.user.findMany({
         where: {
-          role: { in: roleFilter },
-          trade: { in: selectedTrades },
+          OR: [
+            { role: { in: eligibleProfileRoles } },
+            { trade: { in: eligibleProfileRoles } },
+          ],
         },
-        select: { id: true, trade: true, role: true },
+        select: {
+          id: true,
+          trade: true,
+          role: true,
+          products: {
+            select: { category: true },
+          },
+        },
       });
 
-      if (recipients.length > 0) {
+      const filteredRecipients = recipients.filter((recipient) => {
+        const normalizedRole = normalizeProjectActorRole(recipient.role || recipient.trade || "");
+        const roleMatches = eligibleProfileRoles.includes(normalizedRole);
+
+        if (!roleMatches) return false;
+
+        if (requestedTrades.length === 0) return true;
+
+        if (normalizedTargetRole === "all") {
+          return userMatchesSelectedCategory(recipient, requestedTrades);
+        }
+
+        if (normalizedTargetRole === "vendeur") {
+          return normalizedRole === "vendeur" && userMatchesSelectedCategory(recipient, requestedTrades);
+        }
+
+        if (normalizedTargetRole === "artisan") {
+          return normalizedRole === "artisan" && userMatchesSelectedCategory(recipient, requestedTrades);
+        }
+
+        if (normalizedTargetRole === "promoteur") {
+          return normalizedRole === "promoteur" && userMatchesSelectedCategory(recipient, requestedTrades);
+        }
+
+        return userMatchesSelectedCategory(recipient, requestedTrades);
+      });
+
+      if (filteredRecipients.length > 0) {
         await prisma.projectRecipient.createMany({
-          data: recipients.map((recipient) => ({
+          data: filteredRecipients.map((recipient) => ({
             projectId: project.id,
             professionalId: recipient.id,
             trade: recipient.trade || recipient.role || "professionnel",
             status: "INVITE",
-            message: `Demande de devis ${normalizedTargetRole === "all" ? "multi-profils" : normalizedTargetRole} (${selectedTrades.join(", ")})`,
+            message: `Demande de devis ${normalizedTargetRole === "all" ? "multi-profils" : normalizedTargetRole} (${requestedTrades.length > 0 ? requestedTrades.join(", ") : "tous"})`,
           })),
         });
       }

@@ -5,20 +5,186 @@ type WorkTypeOption = {
   label: string;
 };
 
+type ProfessionalFamily =
+  | "conception"
+  | "technique"
+  | "execution"
+  | "commercial"
+  | "finance"
+  | "juridique"
+  | "reglementation"
+  | "pilotage"
+  | "social"
+  | "autre";
+
 type TradeRules = {
+  family: ProfessionalFamily;
   projectTypes: string[];
   workTypes: WorkTypeOption[];
   surfaces: string[];
   units: string[];
 };
 
+type TradeRulesInput = Omit<TradeRules, "family"> & {
+  family?: ProfessionalFamily;
+};
+
+const professionalFamilyByRole: Record<string, ProfessionalFamily> = {
+  artisan: "execution",
+  vendeur: "commercial",
+  vendeurproduit: "commercial",
+  seller: "commercial",
+  promoteur: "pilotage",
+  architecte: "conception",
+  urbaniste: "conception",
+  paysagiste: "conception",
+  bureau_detude: "technique",
+  bureau_d_etude: "technique",
+  bureauetude: "technique",
+  cabinet: "technique",
+  banque: "finance",
+  organisme_de_pret: "finance",
+  assurance: "finance",
+  notaire: "juridique",
+  juriste: "juridique",
+  mairie: "reglementation",
+  amenageur: "social",
+  bailleur_social: "social",
+  agence_immobiliere: "commercial",
+  mandataire: "commercial",
+  gestionnaire: "pilotage",
+};
+
+export const professionalFamilies: Array<{ value: ProfessionalFamily; label: string; description: string }> = [
+  { value: "conception", label: "Conception", description: "Architecte, urbaniste, paysagiste, architecture intérieure" },
+  { value: "technique", label: "Technique", description: "Bureau d’étude, ingénierie, calcul, structure" },
+  { value: "execution", label: "Exécution / chantier", description: "Artisans, corps de métiers, entreprises de travaux" },
+  { value: "commercial", label: "Commercial / vente", description: "Vendeurs, fournisseurs, distributeurs, agences" },
+  { value: "finance", label: "Finance", description: "Banques, prêts, assurances, investisseurs" },
+  { value: "juridique", label: "Juridique / administratif", description: "Notaire, juriste, dossiers légaux" },
+  { value: "reglementation", label: "Réglementation", description: "Mairie, autorisations, conformité locale" },
+  { value: "pilotage", label: "Pilotage / promotion", description: "Promoteur, gestion de projet, coordination" },
+  { value: "social", label: "Social / aménagement", description: "Aménageurs, bailleurs, logement social" },
+  { value: "autre", label: "Autre", description: "Autres profils non classés" },
+];
+
+export const projectActorRoles = ["all", "artisan", "vendeur", "promoteur"] as const;
+export type ProjectActorRole = (typeof projectActorRoles)[number];
+
+export function normalizeProjectActorRole(role?: string | null): ProjectActorRole {
+  const normalized = (role || "").toLowerCase().trim();
+  if (normalized === "all" || normalized === "tous" || normalized === "tout") return "all";
+  if (normalized === "artisan" || normalized === "artisans") return "artisan";
+  if (normalized === "vendeur" || normalized === "vendeurs" || normalized === "seller" || normalized === "fournisseur") return "vendeur";
+  if (normalized === "promoteur" || normalized === "promoteurs" || normalized === "gestionnaire" || normalized === "pilotage") return "promoteur";
+  return "artisan";
+}
+
+export function getBroadcastTargetRoles(role?: string | null): ProjectActorRole[] {
+  const normalizedRole = normalizeProjectActorRole(role);
+  if (normalizedRole === "all") return ["artisan", "vendeur", "promoteur"];
+  return [normalizedRole];
+}
+
+export const projectActorCatalog = {
+  all: {
+    role: "all",
+    family: "autre",
+    familyLabel: "Tous profils",
+    label: "Tous profils",
+    decisionLevel: "client",
+    description: "Le client reçoit l’offre de la meilleure combinaison d’acteurs selon le besoin.",
+    delegate: "Client / décideur principal",
+    recipientType: "multi",
+  },
+  artisan: {
+    role: "artisan",
+    family: "execution",
+    familyLabel: "Exécution / chantier",
+    label: "Artisan",
+    decisionLevel: "terrain",
+    description: "Le métier de terrain exécute les travaux et valide les contraintes techniques du chantier.",
+    delegate: "Chef d’équipe / artisan responsable",
+    recipientType: "artisan",
+  },
+  vendeur: {
+    role: "vendeur",
+    family: "commercial",
+    familyLabel: "Commercial / vente",
+    label: "Vendeur",
+    decisionLevel: "approvisionnement",
+    description: "Le vendeur apporte les matériaux, le stock, la logistique et la conformité commerciale.",
+    delegate: "Commercial / gestionnaire de compte",
+    recipientType: "vendeur",
+  },
+  promoteur: {
+    role: "promoteur",
+    family: "pilotage",
+    familyLabel: "Pilotage / promotion",
+    label: "Promoteur",
+    decisionLevel: "pilotage",
+    description: "Le promoteur coordonne les acteurs, fixe les priorités, pilote le programme et supervise la décision finale.",
+    delegate: "Chef de projet / promoteur / directeur de programme",
+    recipientType: "promoteur",
+  },
+} as const;
+
+export function getActorTaxonomy(role?: string | null, trade?: string | null) {
+  const normalizedRole = normalizeProjectActorRole(role);
+  const family = getProfessionalFamilyByRole(normalizedRole, trade);
+  const familyLabel = getProfessionalFamilyLabel(family);
+
+  const catalogEntry =
+    normalizedRole === "all"
+      ? projectActorCatalog.all
+      : normalizedRole === "artisan"
+        ? projectActorCatalog.artisan
+        : normalizedRole === "vendeur"
+          ? projectActorCatalog.vendeur
+          : projectActorCatalog.promoteur;
+
+  return {
+    role: normalizedRole,
+    family,
+    familyLabel,
+    roleLabel: catalogEntry.label,
+    decisionLevel: catalogEntry.decisionLevel,
+    description: catalogEntry.description,
+    delegate: catalogEntry.delegate,
+    recipientType: catalogEntry.recipientType,
+    label: catalogEntry.label,
+  };
+}
+
+export function buildProjectActorNetwork(role?: string | null, trade?: string | null) {
+  const actor = getActorTaxonomy(role, trade);
+  const family = actor.family;
+
+  return {
+    actor,
+    family,
+    supportedBy:
+      family === "execution"
+        ? ["artisan", "bureau d’étude", "promoteur"]
+        : family === "commercial"
+          ? ["vendeur", "logistique", "commercial"]
+          : family === "pilotage"
+            ? ["promoteur", "chef de projet", "coordination chantier"]
+            : ["conseil", "expert", "gestionnaire"],
+    humanDelegate: actor.delegate,
+    decisionOwner:
+      actor.role === "promoteur" ? "promoteur / pilote du programme" : actor.role === "vendeur" ? "commercial responsable" : actor.role === "artisan" ? "artisan responsable" : "client",
+  };
+}
+
 // --- DÉFINITION DES RÈGLES PAR MÉTIER (NORMALISÉES) ---
-const tradeRulesMap: Record<string, TradeRules> = {
+const tradeRulesMap: Record<string, TradeRulesInput> = {
   // ===================================================================
   // ARTISANS
   // ===================================================================
 
   carreleur: {
+    family: "execution",
     projectTypes: ["Rénovation", "Rafraîchissement", "Construction neuve", "Aménagement"],
     workTypes: [
       // SCÉNARIO LOURD (Dépose + pose)
@@ -37,6 +203,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   plombier: {
+    family: "execution",
     projectTypes: ["Gros œuvre", "Dépannage / Entretien", "Rénovation"],
     workTypes: [
       // LOURD
@@ -53,6 +220,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   electricien: {
+    family: "execution",
     projectTypes: ["Rénovation", "Construction neuve", "Mise aux normes", "Dépannage"],
     workTypes: [
       // LOURD
@@ -69,6 +237,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   peintre: {
+    family: "execution",
     projectTypes: ["Rénovation", "Rafraîchissement", "Construction neuve", "Ravalement"],
     workTypes: [
       // LOURD
@@ -83,6 +252,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   menuisier: {
+    family: "execution",
     projectTypes: ["Sur-mesure", "Rénovation", "Construction neuve", "Agrandissement"],
     workTypes: [
       // LOURD
@@ -97,6 +267,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   maçon: {
+    family: "execution",
     projectTypes: ["Gros œuvre", "Rénovation", "Construction neuve", "Agrandissement"],
     workTypes: [
       // LOURD
@@ -111,6 +282,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   couvreur: {
+    family: "execution",
     projectTypes: ["Rénovation", "Construction neuve", "Réparation"],
     workTypes: [
       // LOURD
@@ -125,6 +297,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   terrassier: {
+    family: "execution",
     projectTypes: ["Construction neuve", "Agrandissement", "Aménagement extérieur"],
     workTypes: [
       // LOURD
@@ -139,6 +312,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   renovation: {
+    family: "execution",
     projectTypes: ["Rénovation complète", "Ravalement", "Réhabilitation"],
     workTypes: [
       // LOURD
@@ -153,6 +327,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   platrier: {
+    family: "execution",
     projectTypes: ["Rénovation", "Construction neuve", "Aménagement"],
     workTypes: [
       // LOURD
@@ -167,6 +342,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   chauffagiste: {
+    family: "execution",
     projectTypes: ["Construction neuve", "Rénovation", "Dépannage"],
     workTypes: [
       // LOURD
@@ -181,6 +357,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   vitrier: {
+    family: "execution",
     projectTypes: ["Rénovation", "Construction neuve", "Dépannage"],
     workTypes: [
       // LOURD
@@ -195,6 +372,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   serrurier: {
+    family: "execution",
     projectTypes: ["Dépannage", "Rénovation", "Construction neuve"],
     workTypes: [
       // LOURD
@@ -208,6 +386,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   ferronnier: {
+    family: "execution",
     projectTypes: ["Construction neuve", "Rénovation", "Sur-mesure"],
     workTypes: [
       // LOURD
@@ -222,6 +401,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   etancheite: {
+    family: "execution",
     projectTypes: ["Construction neuve", "Rénovation", "Réparation"],
     workTypes: [
       // LOURD
@@ -236,6 +416,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   forestier: {
+    family: "execution",
     projectTypes: ["Entretien", "Débroussaillage", "Exploitation"],
     workTypes: [
       // LOURD
@@ -250,6 +431,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   generaliste: {
+    family: "execution",
     projectTypes: ["Rénovation", "Construction neuve", "Aménagement", "Entretien"],
     workTypes: [
       // LOURD
@@ -267,6 +449,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   // ===================================================================
 
   materiaux: {
+    family: "commercial",
     projectTypes: ["Livraison", "Approvisionnement chantier", "Gros œuvre"],
     workTypes: [
       { value: "livraison-materiaux", label: "Livraison de matériaux (gros volumes)" },
@@ -278,6 +461,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   sanitaire: {
+    family: "commercial",
     projectTypes: ["Livraison", "Installation", "Remplacement"],
     workTypes: [
       { value: "livraison-sanitaire", label: "Livraison équipements sanitaires" },
@@ -288,6 +472,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   quincaillerie: {
+    family: "commercial",
     projectTypes: ["Approvisionnement", "Renfort", "Sécurisation"],
     workTypes: [
       { value: "fourniture-quincaillerie", label: "Fourniture quincaillerie" },
@@ -298,6 +483,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   menuiserie: {
+    family: "commercial",
     projectTypes: ["Livraison", "Sur-mesure", "Agencement"],
     workTypes: [
       { value: "fourniture-bois", label: "Fourniture de bois et panneaux" },
@@ -309,6 +495,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   isolation: {
+    family: "commercial",
     projectTypes: ["Rénovation", "Construction neuve", "Performance énergétique"],
     workTypes: [
       { value: "fourniture-isolation", label: "Fourniture matériaux d'isolation" },
@@ -319,6 +506,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   outillage: {
+    family: "commercial",
     projectTypes: ["Location", "Vente", "Réparation"],
     workTypes: [
       { value: "vente-outillage", label: "Vente d'outillage" },
@@ -330,6 +518,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   decoration: {
+    family: "commercial",
     projectTypes: ["Rénovation", "Aménagement", "Conseil"],
     workTypes: [
       { value: "fourniture-decoration", label: "Fourniture décoration (papier peint, sols)" },
@@ -344,6 +533,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   // ===================================================================
 
   "promotion-immobiliere": {
+    family: "pilotage",
     projectTypes: ["Promotion immobilière", "Lancement de programme"],
     workTypes: [
       { value: "etude-marche", label: "Étude de marché et faisabilité" },
@@ -354,6 +544,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   "gestion-chantier": {
+    family: "pilotage",
     projectTypes: ["Gestion de chantier", "Coordination"],
     workTypes: [
       { value: "planning", label: "Planification et ordonnancement" },
@@ -364,6 +555,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   "maitrise-oeuvre": {
+    family: "pilotage",
     projectTypes: ["Maîtrise d'œuvre", "Direction de projet"],
     workTypes: [
       { value: "conception", label: "Conception et plans" },
@@ -374,6 +566,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   "coordination-travaux": {
+    family: "pilotage",
     projectTypes: ["Coordination", "Sécurité chantier"],
     workTypes: [
       { value: "coordination-sps", label: "Coordination SPS" },
@@ -384,6 +577,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
   },
 
   amenagement: {
+    family: "social",
     projectTypes: ["Aménagement urbain", "Lotissement"],
     workTypes: [
       { value: "voierie", label: "Voirie et réseaux divers" },
@@ -396,6 +590,7 @@ const tradeRulesMap: Record<string, TradeRules> = {
 
 // --- RÈGLES PAR DÉFAUT (fallback) ---
 const defaultRules: TradeRules = {
+  family: "autre",
   projectTypes: ["Rénovation", "Construction neuve", "Dépannage", "Aménagement"],
   workTypes: [
     { value: "prestation-standard", label: "Prestation standard" },
@@ -413,7 +608,34 @@ export function getTradeRules(trade: string): TradeRules {
   if (normalizedTrade === "autres" || normalizedTrade === "generaliste") {
     return defaultRules;
   }
-  return tradeRulesMap[normalizedTrade] || defaultRules;
+
+  const rules = tradeRulesMap[normalizedTrade];
+  if (!rules) return defaultRules;
+
+  return {
+    family: rules.family ?? professionalFamilyByRole[normalizedTrade] ?? "autre",
+    projectTypes: rules.projectTypes,
+    workTypes: rules.workTypes,
+    surfaces: rules.surfaces,
+    units: rules.units,
+  };
+}
+
+export function getProfessionalFamilyByRole(role?: string | null, trade?: string | null): ProfessionalFamily {
+  const normalizedRole = (role || trade || "").toLowerCase().trim();
+  if (!normalizedRole) return "autre";
+
+  const mapped = Object.entries(professionalFamilyByRole).find(([key]) => normalizedRole.includes(key) || key.includes(normalizedRole));
+  if (mapped) return mapped[1];
+
+  const tradeRules = getTradeRules(normalizedRole);
+  return tradeRules.family || "autre";
+}
+
+export function getProfessionalFamilyLabel(value?: string | null): string {
+  const family = (value || "autre") as ProfessionalFamily;
+  const item = professionalFamilies.find((entry) => entry.value === family);
+  return item?.label || "Autre";
 }
 
 export function getWorkTypeLabel(trade: string, workTypeValue: string): string {

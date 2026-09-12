@@ -1,7 +1,7 @@
 'use client';
 
 import { ChevronDown, Globe } from 'lucide-react';
-import { locales, setLocale, getLocaleFromStorage, type Locale } from '@/lib/i18n';
+import { locales, setLocale, getLocaleFromStorage, defaultLocale, type Locale } from '@/lib/i18n';
 import { useEffect, useRef, useState } from 'react';
 
 const localeLabels: Record<Locale, string> = {
@@ -11,11 +11,15 @@ const localeLabels: Record<Locale, string> = {
 };
 
 export function LocaleSwitcher() {
-  const [locale, setLocalLocale] = useState<Locale>(() => getLocaleFromStorage());
+  const [locale, setLocalLocale] = useState<Locale>(defaultLocale);
+  const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    setMounted(true);
+    setLocalLocale(getLocaleFromStorage());
+
     const handleClickOutside = (event: MouseEvent) => {
       if (ref.current && !ref.current.contains(event.target as Node)) {
         setOpen(false);
@@ -26,6 +30,8 @@ export function LocaleSwitcher() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const activeLocale = mounted ? locale : defaultLocale;
+
   const handleSelect = (item: Locale) => {
     setLocalLocale(item);
     setOpen(false);
@@ -33,16 +39,17 @@ export function LocaleSwitcher() {
   };
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative" suppressHydrationWarning>
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
         aria-expanded={open}
         aria-label="Sélecteur de langue"
+        suppressHydrationWarning
       >
         <Globe className="h-3.5 w-3.5 text-slate-500" />
-        <span>{localeLabels[locale]}</span>
+        <span>{localeLabels[activeLocale]}</span>
         <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
@@ -54,11 +61,11 @@ export function LocaleSwitcher() {
               type="button"
               onClick={() => handleSelect(item)}
               className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-left text-[11px] font-semibold transition ${
-                locale === item ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                activeLocale === item ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
               <span>{localeLabels[item]}</span>
-              {locale === item && <span className="text-[10px]">✓</span>}
+              {activeLocale === item && <span className="text-[10px]">✓</span>}
             </button>
           ))}
         </div>

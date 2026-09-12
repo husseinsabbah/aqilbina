@@ -4,7 +4,7 @@ import { ArrowRight, BadgeCheck, Building2, MessageSquareText, Search, ShieldChe
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
-import { getLocaleFromStorage, messages, type Locale } from "@/lib/i18n";
+import { defaultLocale, getLocaleFromStorage, messages, type Locale } from "@/lib/i18n";
 import SearchBar from "@/components/SearchBar";
 
 const avatarSequence = [
@@ -72,7 +72,11 @@ export default function HomePage() {
   const [searchVendor, setSearchVendor] = useState("");
   const [budget, setBudget] = useState(4500);
   const [homeArtisans, setHomeArtisans] = useState<PublicArtisan[]>([]);
-  const [locale] = useState<Locale>(() => getLocaleFromStorage());
+  const [locale, setLocaleState] = useState<Locale>(defaultLocale);
+
+  useEffect(() => {
+    setLocaleState(getLocaleFromStorage());
+  }, []);
 
   useEffect(() => {
     if (status === "loading" || !session?.user) return;

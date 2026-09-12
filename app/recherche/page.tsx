@@ -49,6 +49,8 @@ function RechercheContent() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let isActive = true;
+
     const fetchResults = async () => {
       setLoading(true);
       setError(null);
@@ -60,16 +62,25 @@ function RechercheContent() {
         const res = await fetch(`/api/public/search?${params.toString()}`);
         if (!res.ok) throw new Error("Erreur lors de la recherche");
         const data = await res.json();
-        setProfessionals(data || []);
+
+        if (!isActive) return;
+        setProfessionals(Array.isArray(data) ? data : []);
       } catch (err) {
+        if (!isActive) return;
         setError(err instanceof Error ? err.message : "Erreur inconnue");
         setProfessionals([]);
       } finally {
-        setLoading(false);
+        if (isActive) {
+          setLoading(false);
+        }
       }
     };
 
     fetchResults();
+
+    return () => {
+      isActive = false;
+    };
   }, [type, query]);
 
   const getProfessionalTypeLabel = (value?: string | null) => {
@@ -207,7 +218,7 @@ function RechercheContent() {
             <ProjectRequestForm
               artisanId="broadcast"
               artisanName="tous les professionnels concernés"
-              trade="general"
+              trade={type === "all" ? "general" : type}
               broadcastMode={true}
               professionalLabel={selectedTypeLabel}
               targetRole={type === "all" ? "all" : (type as "artisan" | "vendeur" | "promoteur")}

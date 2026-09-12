@@ -2,12 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { canManageCatalog, hasCatalogManagementRole, validateCatalogProductCompatibility } from '@/lib/role-access';
 
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    }
+
+    if (!hasCatalogManagementRole(session)) {
+      return NextResponse.json({ error: 'Accès interdit' }, { status: 403 });
     }
 
     const products = await prisma.product.findMany({
@@ -47,15 +52,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Nom, catégorie et catalogue requis' }, { status: 400 });
     }
 
-    const catalog = await prisma.catalog.findFirst({
-      where: {
-        id: catalogId,
-        userId: session.user.id,
-      },
+    const catalog = await prisma.catalog.findUnique({
+      where: { id: catalogId },
     });
 
-    if (!catalog) {
+    if (!catalog || !canManageCatalog(session, catalog.userId)) {
       return NextResponse.json({ error: 'Catalogue introuvable' }, { status: 404 });
+    }
+
+    const compatibility = validateCatalogProductCompatibility(catalog.name, String(category));
+    if (!compatibility.ok) {
+      return NextResponse.json({ error: compatibility.message || 'Produit incompatible avec ce catalogue' }, { status: 400 });
     }
 
     const product = await prisma.product.create({
